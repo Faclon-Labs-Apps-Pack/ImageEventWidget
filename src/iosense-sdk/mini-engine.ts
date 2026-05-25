@@ -1,4 +1,4 @@
-import { WidgetTemplateEnvelope, WidgetTemplateUIConfig, DataEntry, SeriesPayload, Duration } from './types';
+import { ImageWidgetEnvelope, ImageWidgetUIConfig, DataEntry, SeriesPayload, Duration } from './types';
 import { resolveAndCompute } from './api';
 
 interface MiniEngineCtx {
@@ -7,9 +7,9 @@ interface MiniEngineCtx {
 }
 
 export async function resolve(
-  envelope: WidgetTemplateEnvelope,
+  envelope: ImageWidgetEnvelope,
   ctx: MiniEngineCtx,
-): Promise<{ config: WidgetTemplateUIConfig; data: DataEntry[] }> {
+): Promise<{ config: ImageWidgetUIConfig; data: DataEntry[] }> {
   const { startTime, endTime } = computeWindow(envelope, ctx.override);
   const bindings = envelope.dynamicBindingPathList ?? [];
 
@@ -62,7 +62,7 @@ export function getSeriesData(key: string, data: DataEntry[]): SeriesPayload | n
 }
 
 function computeWindow(
-  envelope: WidgetTemplateEnvelope,
+  envelope: ImageWidgetEnvelope,
   override?: { startTime: number; endTime: number },
 ): { startTime: number; endTime: number } {
   if (override) return override;

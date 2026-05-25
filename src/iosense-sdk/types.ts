@@ -70,25 +70,48 @@ export type WidgetEvent =
   | { type: 'FILTER_CHANGE'; payload: Record<string, unknown> };
 
 // ---------------------------------------------------------------------------
-// WidgetTemplate — replace with your widget's config shape after init-widget.sh
+// ImageWidget
 // ---------------------------------------------------------------------------
 
-export interface WidgetTemplateUIConfig {
-  // Add your widget's render config fields here.
-  // Example:
-  //   title: string;
-  //   variable: string;       // bindable — user types {{topic}}
-  //   style: { card: { wrapInCard: boolean; bg: string } };
+export interface ImageEventConfig {
+  id: string;
+  label: string;
+  image: string;                                        // base64 data URL
+  alignment: 'Left' | 'Center' | 'Right';
+  width: string;                                        // e.g. "300" (px value, empty = auto)
+  height: string;                                       // e.g. "200" (px value, empty = auto)
+  topic: string;                                        // bindable — user stores {{uns:wsId://path}}
+  operator: '==' | '!=' | '>' | '<' | '>=' | '<=';
+  value: string;                                        // comparison threshold
+}
+
+export interface ImageRuleConfig {
+  id: string;
+  label: string;
+  topic: string;           // bindable — user stores {{uns:wsId://path}} here
+  operator: '==' | '!=' | '>' | '<' | '>=' | '<=';
+  value: string;           // comparison value (string, will be coerced for numeric compare)
+  eventId: string;         // ID of ImageEventConfig to show when this rule matches
+}
+
+export interface ImageWidgetUIConfig {
+  defaultImage: string;    // base64 data URL — shown when no rule matches
+  linkConfig: {
+    enabled: boolean;
+    url: string;           // URL to navigate to when image is clicked
+  };
+  events: ImageEventConfig[];
+  rules: ImageRuleConfig[];
   style: {
     card: { wrapInCard: boolean; bg: string };
   };
 }
 
-export interface WidgetTemplateEnvelope {
+export interface ImageWidgetEnvelope {
   _id: string;
-  type: 'WidgetTemplate';
+  type: 'ImageWidget';
   general: { title: string };
   timeConfig?: TimeConfig;
-  uiConfig: WidgetTemplateUIConfig;
+  uiConfig: ImageWidgetUIConfig;
   dynamicBindingPathList: Array<BindingEntry>;
 }

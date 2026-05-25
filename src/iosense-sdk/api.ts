@@ -50,6 +50,54 @@ export async function resolveAndCompute(
   });
 }
 
+function mimeToExt(mimeType: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/svg+xml': 'svg',
+    'application/json': 'json',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+  };
+  return map[mimeType] ?? 'jpg';
+}
+
+export async function getS3SignedUrl(
+  authentication: string,
+  file: File,
+): Promise<{ signedUrl: string; publicUrl: string }> {
+  const ext = mimeToExt(file.type);
+  const filename = `IoLens-${Date.now()}.${ext}`;
+  const res = await fetch(`${STAGING_BASE}/account/s3/signedUrl`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authentication}`,
+    },
+    body: JSON.stringify({ folderName: 'IOLens', filename, contentType: file.type }),
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error('Failed to get S3 signed URL');
+  const signedUrl = json.data as string;
+  const publicUrl = signedUrl.split('?')[0];
+  return { signedUrl, publicUrl };
+}
+
+export async function uploadFileToS3(signedUrl: string, file: File): Promise<void> {
+  await fetch(signedUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type },
+    body: file,
+  });
+}
+
+export async function uploadImageToS3(authentication: string, file: File): Promise<string> {
+  const { signedUrl, publicUrl } = await getS3SignedUrl(authentication, file);
+  await uploadFileToS3(signedUrl, file);
+  return publicUrl;
+}
+
 export async function fetchUNSNodes(
   authentication: string,
   graph: string,
