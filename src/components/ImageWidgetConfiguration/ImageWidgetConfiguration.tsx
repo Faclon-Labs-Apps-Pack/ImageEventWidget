@@ -14,7 +14,6 @@ import { DropdownMenu } from '@faclon-labs/design-sdk/DropdownMenu';
 import { ActionListItem } from '@faclon-labs/design-sdk/ActionListItem';
 import { useUNSTree } from '../../iosense-sdk/useUNSTree';
 import type { UNSTree } from '../../iosense-sdk/useUNSTree';
-import { uploadImageToS3 } from '../../iosense-sdk/api';
 import {
   ImageWidgetEnvelope,
   ImageWidgetUIConfig,
@@ -87,6 +86,48 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+const STAGING_BASE = 'https://stagingsv.iosense.io/api';
+
+function mimeToExt(mimeType: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/svg+xml': 'svg',
+    'application/json': 'json',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+  };
+  return map[mimeType] ?? 'jpg';
+}
+
+async function getS3SignedUrl(
+  authentication: string,
+  file: File,
+): Promise<{ signedUrl: string; publicUrl: string }> {
+  const ext = mimeToExt(file.type);
+  const filename = `IoLens-${Date.now()}.${ext}`;
+  const res = await fetch(`${STAGING_BASE}/account/s3/signedUrl`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authentication}`,
+    },
+    body: JSON.stringify({ folderName: 'IOLens', filename, contentType: file.type }),
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error('Failed to get S3 signed URL');
+  const signedUrl = json.data as string;
+  const publicUrl = signedUrl.split('?')[0];
+  return { signedUrl, publicUrl };
+}
+
+async function uploadImageToS3(authentication: string, file: File): Promise<string> {
+  const { signedUrl, publicUrl } = await getS3SignedUrl(authentication, file);
+  await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+  return publicUrl;
+}
+
 const OPERATOR_OPTIONS = ['==', '!=', '>', '<', '>=', '<='] as const;
 type Operator = typeof OPERATOR_OPTIONS[number];
 
@@ -115,19 +156,19 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   // State
   // -------------------------------------------------------------------------
   const [defaultImage, setDefaultImage] = useState<string>(
-    config?.uiConfig.defaultImage ?? '',
+    config?.uiConfig?.defaultImage ?? '',
   );
   const [linkEnabled, setLinkEnabled] = useState<boolean>(
-    config?.uiConfig.linkConfig.enabled ?? false,
+    config?.uiConfig?.linkConfig?.enabled ?? false,
   );
   const [linkUrl, setLinkUrl] = useState<string>(
-    config?.uiConfig.linkConfig.url ?? '',
+    config?.uiConfig?.linkConfig?.url ?? '',
   );
   const [events, setEvents] = useState<ImageEventConfig[]>(
-    config?.uiConfig.events ?? [],
+    config?.uiConfig?.events ?? [],
   );
   const [rules, setRules] = useState<ImageRuleConfig[]>(
-    config?.uiConfig.rules ?? [],
+    config?.uiConfig?.rules ?? [],
   );
 
   // Accordion expand state
@@ -172,10 +213,10 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   // Sync state from existing config on mount / config change
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (config) {
+    if (config?.uiConfig) {
       setDefaultImage(config.uiConfig.defaultImage ?? '');
-      setLinkEnabled(config.uiConfig.linkConfig.enabled ?? false);
-      setLinkUrl(config.uiConfig.linkConfig.url ?? '');
+      setLinkEnabled(config.uiConfig.linkConfig?.enabled ?? false);
+      setLinkUrl(config.uiConfig.linkConfig?.url ?? '');
       setEvents(config.uiConfig.events ?? []);
       setRules(config.uiConfig.rules ?? []);
     }
@@ -209,8 +250,8 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       rules: resolved.rules,
       style: {
         card: {
-          wrapInCard: config?.uiConfig.style.card.wrapInCard ?? false,
-          bg: config?.uiConfig.style.card.bg ?? '',
+          wrapInCard: config?.uiConfig?.style?.card?.wrapInCard ?? false,
+          bg: config?.uiConfig?.style?.card?.bg ?? '',
         },
       },
     };

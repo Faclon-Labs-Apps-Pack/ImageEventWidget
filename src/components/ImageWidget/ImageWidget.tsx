@@ -80,6 +80,8 @@ function NoConfigScreen() {
 }
 
 export function ImageWidget({ config, data, onEvent: _onEvent }: ImageWidgetProps) {
+  if (!config) return <NoConfigScreen />;
+
   // If any event or rule has a topic binding but data hasn't loaded, show skeleton
   const hasBindings = config.events.some((e) => e.topic) || config.rules.some((r) => r.topic);
   if (hasBindings && data.length === 0) {
