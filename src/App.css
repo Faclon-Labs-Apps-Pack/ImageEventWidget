@@ -4,9 +4,11 @@
   padding: 0;
 }
 
-/* UNSPathInput dropdown portal renders to document.body at z-index 100 (--global-z-index-dropdown).
-   Modal backdrop/container sit at 300/400 — bump the popover above both. */
-.fds-uns-path-input__popover {
+/* Popover portals render to document.body at z-index 100 (--global-z-index-dropdown).
+   Modal backdrop/container sit at 300/400 — bump popovers above both. */
+.fds-uns-path-input__popover,
+.fds-select-input__popover,
+.fds-search-input__popover {
   z-index: 600 !important;
 }
 
@@ -26,8 +28,7 @@ body {
   width: 280px;
   flex-shrink: 0;
   background: var(--background-default-intense, #fff);
-  border: var(--fds-border-default, 1px solid #e0e0e0);
-  border-radius: var(--global-border-radius-large, 8px);
+  border-radius: var(--global-border-radius-medium, 4px);
   overflow: hidden;
 }
 

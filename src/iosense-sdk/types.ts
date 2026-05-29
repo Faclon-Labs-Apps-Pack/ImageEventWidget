@@ -77,31 +77,29 @@ export interface ImageEventConfig {
   id: string;
   label: string;
   image: string;                                        // base64 data URL
-  alignment: 'Left' | 'Center' | 'Right';
-  width: string;                                        // e.g. "300" (px value, empty = auto)
-  height: string;                                       // e.g. "200" (px value, empty = auto)
+  alignment:
+    | 'Top Left' | 'Top Center' | 'Top Right'
+    | 'Left' | 'Center' | 'Right'
+    | 'Bottom Left' | 'Bottom Center' | 'Bottom Right';
+  width: number;                                        // px (0 = auto)
+  height: number;                                       // px (0 = auto)
   topic: string;                                        // bindable — user stores {{uns:wsId://path}}
   operator: '==' | '!=' | '>' | '<' | '>=' | '<=';
   value: string;                                        // comparison threshold
-}
-
-export interface ImageRuleConfig {
-  id: string;
-  label: string;
-  topic: string;           // bindable — user stores {{uns:wsId://path}} here
-  operator: '==' | '!=' | '>' | '<' | '>=' | '<=';
-  value: string;           // comparison value (string, will be coerced for numeric compare)
-  eventId: string;         // ID of ImageEventConfig to show when this rule matches
+  frameRangeEnabled: boolean;                           // when true, the event is also gated by [startFrame, endFrame]
+  startFrame: number;                                   // Lottie frame (0 = unset)
+  endFrame: number;                                     // Lottie frame (0 = unset)
 }
 
 export interface ImageWidgetUIConfig {
   defaultImage: string;    // base64 data URL — shown when no rule matches
+  defaultWidth: number;    // px (0 = auto)
+  defaultHeight: number;   // px (0 = auto)
   linkConfig: {
     enabled: boolean;
     url: string;           // URL to navigate to when image is clicked
   };
   events: ImageEventConfig[];
-  rules: ImageRuleConfig[];
   style: {
     card: { wrapInCard: boolean; bg: string };
   };

@@ -1,11 +1,19 @@
-import { Settings } from 'react-feather';
-import { DataEntry, WidgetEvent, ImageWidgetUIConfig, ImageRuleConfig, ImageEventConfig } from '../../iosense-sdk/types';
+import { FileText } from 'react-feather';
+import Lottie from 'lottie-react';
+import { EmptyState } from '@faclon-labs/design-sdk/EmptyState';
+import { NoDataOneIllustration } from '@faclon-labs/design-sdk/EmptyState/illustrations/NoDataOneIllustration';
+import { Button } from '@faclon-labs/design-sdk/Button';
+import { Card } from '@faclon-labs/design-sdk/Card';
+import { DataEntry, WidgetEvent, ImageWidgetUIConfig, ImageEventConfig } from '../../iosense-sdk/types';
+import { isJsonAsset, useLottieAnimation } from '../../iosense-sdk/lottie';
 import './ImageWidget.css';
 
 interface ImageWidgetProps {
   config: ImageWidgetUIConfig;
   data: DataEntry[];
   onEvent: (event: WidgetEvent) => void;
+  /** Called when "Configure Widget" is clicked in the no-config empty state. Host should open the file picker / configurator. */
+  onConfigureClick?: () => void;
 }
 
 // Read a bindable value: resolved data takes priority, config field is the fallback.
@@ -27,22 +35,13 @@ function getValueAtPath(obj: unknown, path: string): unknown {
     .reduce((acc: unknown, k) => (acc as Record<string, unknown>)?.[k], obj);
 }
 
-function evaluateRule(
-  rule: ImageRuleConfig,
-  resolvedValue: string | number | null,
-): boolean {
-  if (resolvedValue === null || resolvedValue === undefined) return false;
-  const a = typeof resolvedValue === 'number' ? resolvedValue : parseFloat(String(resolvedValue));
-  const b = parseFloat(rule.value);
-
-  switch (rule.operator) {
-    case '==': return String(resolvedValue) === rule.value || (!isNaN(a) && !isNaN(b) && a === b);
-    case '!=': return String(resolvedValue) !== rule.value;
-    case '>':  return !isNaN(a) && !isNaN(b) && a > b;
-    case '<':  return !isNaN(a) && !isNaN(b) && a < b;
-    case '>=': return !isNaN(a) && !isNaN(b) && a >= b;
-    case '<=': return !isNaN(a) && !isNaN(b) && a <= b;
-    default:   return false;
+function isValidLinkUrl(raw: string): boolean {
+  if (!raw) return false;
+  try {
+    const u = new URL(raw.trim());
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
   }
 }
 
@@ -65,26 +64,43 @@ function evaluateCondition(
   }
 }
 
-function NoConfigScreen() {
+function NoConfigScreen({
+  wrapInCard,
+  onConfigureClick,
+}: {
+  wrapInCard: boolean;
+  onConfigureClick?: () => void;
+}) {
   return (
-    <div className="iw-widget iw-widget__empty">
-      <Settings size={28} style={{ color: 'var(--text-default-tertiary, #616d75)', marginBottom: 8 }} />
-      <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-default-secondary, #292f32)', margin: 0 }}>
-        Widget not configured
-      </p>
-      <p style={{ fontSize: 12, color: 'var(--text-default-tertiary, #616d75)', margin: 0 }}>
-        Open the settings panel to configure this widget.
-      </p>
+    <div className={`iw-widget iw-widget__empty${wrapInCard ? '' : ' iw-widget--no-wrap'}`}>
+      <Card elevation="LowRaised" className="iw-widget__empty-card">
+        <EmptyState
+          size="Medium"
+          illustration={<NoDataOneIllustration />}
+          title="Set Your Default Image"
+          description="Add a default image and configure events."
+          primaryAction={
+            <Button
+              variant="Primary"
+              label="Configure Widget"
+              onClick={() => onConfigureClick?.()}
+            />
+          }
+        />
+      </Card>
     </div>
   );
 }
 
-export function ImageWidget({ config, data, onEvent: _onEvent }: ImageWidgetProps) {
-  // If any event or rule has a topic binding but data hasn't loaded, show skeleton
-  const hasBindings = config.events.some((e) => e.topic) || config.rules.some((r) => r.topic);
+export function ImageWidget({ config, data, onEvent: _onEvent, onConfigureClick }: ImageWidgetProps) {
+  const wrapInCard = config.style?.card?.wrapInCard ?? true;
+  const widgetClass = `iw-widget${wrapInCard ? '' : ' iw-widget--no-wrap'}`;
+
+  // If any event has a topic binding but data hasn't loaded, show skeleton
+  const hasBindings = config.events.some((e) => e.topic);
   if (hasBindings && data.length === 0) {
     return (
-      <div className="iw-widget iw-widget--loading">
+      <div className={`${widgetClass} iw-widget--loading`}>
         <div className="iw-widget__skeleton" />
       </div>
     );
@@ -92,9 +108,9 @@ export function ImageWidget({ config, data, onEvent: _onEvent }: ImageWidgetProp
 
   // Evaluate events in order — find first matching
   let activeImage = config.defaultImage;
-  let activeAlignment: 'Left' | 'Center' | 'Right' = 'Center';
-  let activeWidth = '';
-  let activeHeight = '';
+  let activeAlignment: ImageEventConfig['alignment'] = 'Center';
+  let activeWidth = config.defaultWidth ?? 0;
+  let activeHeight = config.defaultHeight ?? 0;
 
   for (let i = 0; i < config.events.length; i++) {
     const evt = config.events[i];
@@ -117,57 +133,88 @@ export function ImageWidget({ config, data, onEvent: _onEvent }: ImageWidgetProp
     }
   }
 
-  // If no event matched, evaluate rules (legacy rules[] support)
-  if (activeImage === config.defaultImage && config.rules.length > 0) {
-    for (let i = 0; i < config.rules.length; i++) {
-      const rule = config.rules[i];
-      const resolvedValue = getValue(`rules[${i}].topic`, config, data);
-      if (evaluateRule(rule, resolvedValue)) {
-        const event = config.events.find((e) => e.id === rule.eventId);
-        if (event?.image) {
-          activeImage = event.image;
-          activeAlignment = event.alignment ?? 'Center';
-          activeWidth = event.width ?? '';
-          activeHeight = event.height ?? '';
-          break;
-        }
-      }
-    }
-  }
-
   if (!activeImage) {
-    return <NoConfigScreen />;
+    return <NoConfigScreen wrapInCard={wrapInCard} onConfigureClick={onConfigureClick} />;
   }
 
-  const alignmentMap: Record<'Left' | 'Center' | 'Right', string> = {
-    Left: 'flex-start',
-    Center: 'center',
-    Right: 'flex-end',
-  };
+  const axes = alignmentAxes(activeAlignment);
 
-  const imageEl = (
-    <img
-      className="iw-widget__image"
-      src={activeImage}
-      alt="widget"
-      style={{
-        width: activeWidth ? `${activeWidth}px` : '100%',
-        height: activeHeight ? `${activeHeight}px` : '100%',
-        alignSelf: alignmentMap[activeAlignment],
-      }}
-    />
-  );
+  const w = activeWidth || 0;
+  const h = activeHeight || 0;
+  const hasExplicitSize = w > 0 || h > 0;
+  const assetStyle: React.CSSProperties = hasExplicitSize
+    ? {
+        width: w > 0 ? `${w}px` : 'auto',
+        height: h > 0 ? `${h}px` : 'auto',
+        maxWidth: 'none',
+        maxHeight: 'none',
+        objectFit: 'fill',
+      }
+    : {};
+
+  const linkUrl =
+    config.linkConfig.enabled && isValidLinkUrl(config.linkConfig.url)
+      ? config.linkConfig.url.trim()
+      : null;
 
   return (
     <div
-      className="iw-widget"
-      style={{ justifyContent: alignmentMap[activeAlignment] }}
+      className={widgetClass}
+      style={{ justifyContent: axes.h, alignItems: axes.v }}
     >
-      {config.linkConfig.enabled && config.linkConfig.url ? (
-        <a href={config.linkConfig.url} target="_blank" rel="noopener noreferrer" className="iw-widget__link">
-          {imageEl}
+      {linkUrl ? (
+        <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="iw-widget__link">
+          <ActiveAsset src={activeImage} style={assetStyle} />
         </a>
-      ) : imageEl}
+      ) : (
+        <ActiveAsset src={activeImage} style={assetStyle} />
+      )}
     </div>
   );
+}
+
+function alignmentAxes(a: ImageEventConfig['alignment']): {
+  v: 'flex-start' | 'center' | 'flex-end';
+  h: 'flex-start' | 'center' | 'flex-end';
+} {
+  const v: 'flex-start' | 'center' | 'flex-end' = a.startsWith('Top')
+    ? 'flex-start'
+    : a.startsWith('Bottom')
+      ? 'flex-end'
+      : 'center';
+  const h: 'flex-start' | 'center' | 'flex-end' = a.endsWith('Left')
+    ? 'flex-start'
+    : a.endsWith('Right')
+      ? 'flex-end'
+      : 'center';
+  return { v, h };
+}
+
+function ActiveAsset({ src, style }: { src: string; style: React.CSSProperties }) {
+  const lottie = useLottieAnimation(isJsonAsset(src) ? src : undefined);
+
+  if (isJsonAsset(src)) {
+    if (lottie.status === 'ready') {
+      return (
+        <Lottie
+          className="iw-widget__lottie"
+          style={style}
+          animationData={lottie.data}
+          loop
+          autoplay
+        />
+      );
+    }
+    if (lottie.status === 'loading') {
+      return <div className="iw-widget__skeleton" style={style} />;
+    }
+    return (
+      <div className="iw-widget__file-tile" style={style}>
+        <FileText size={28} />
+        <span className="BodySmallRegular">data.json</span>
+      </div>
+    );
+  }
+
+  return <img className="iw-widget__image" src={src} alt="widget" style={style} />;
 }
