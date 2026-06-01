@@ -642,52 +642,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
           />
         </div>
 
-        {hasImage && (
-          <div className="iw-config__form-group">
-            <InputFieldHeader label="Size" size="Medium" />
-            <div className="iw-config__size-row">
-              <TextInput
-                label=""
-                size="Medium"
-                type="number"
-                min={0}
-                prefix="W"
-                suffix="px"
-                accessibilityLabel="Width"
-                value={defaultWidth > 0 ? String(defaultWidth) : ''}
-                onChange={({ value }: { value: string }) => handleDefaultWidthChange(value === '' ? null : Number(value))}
-              />
-              <TextInput
-                label=""
-                size="Medium"
-                type="number"
-                min={0}
-                prefix="H"
-                suffix="px"
-                accessibilityLabel="Height"
-                value={defaultHeight > 0 ? String(defaultHeight) : ''}
-                onChange={({ value }: { value: string }) => handleDefaultHeightChange(value === '' ? null : Number(value))}
-              />
-              <Tooltip
-                bodyText={defaultLockAspect ? 'Unlock Aspect Ratio' : 'Lock Aspect Ratio'}
-                placement="Top"
-              >
-                <IconButton
-                  className={`iw-config__lock-btn${defaultLockAspect ? ' iw-config__lock-btn--active' : ''}`}
-                  icon={
-                    defaultLockAspect
-                      ? <Lock size={16} aria-hidden="true" />
-                      : <Unlock size={16} aria-hidden="true" />
-                  }
-                  size="Medium"
-                  accessibilityLabel={defaultLockAspect ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
-                  onClick={handleDefaultAspectLockToggle}
-                />
-              </Tooltip>
-            </div>
-          </div>
-        )}
-
         <div
           className={`iw-config__switch-row${hasImage ? '' : ' iw-config__switch-row--disabled'}`}
         >
@@ -971,51 +925,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                   ))}
                 </DropdownMenu>
               </SelectInput>
-            </div>
-
-            {/* 4. Size */}
-            <div className="iw-config__form-group">
-              <InputFieldHeader label="Size" size="Medium" />
-              <div className="iw-config__size-row">
-                <TextInput
-                  label=""
-                  size="Medium"
-                  type="number"
-                  min={0}
-                  prefix="W"
-                  suffix="px"
-                  accessibilityLabel="Width"
-                  value={newEventWidth > 0 ? String(newEventWidth) : ''}
-                  onChange={({ value }: { value: string }) => handleEventWidthChange(value === '' ? null : Number(value))}
-                />
-                <TextInput
-                  label=""
-                  size="Medium"
-                  type="number"
-                  min={0}
-                  prefix="H"
-                  suffix="px"
-                  accessibilityLabel="Height"
-                  value={newEventHeight > 0 ? String(newEventHeight) : ''}
-                  onChange={({ value }: { value: string }) => handleEventHeightChange(value === '' ? null : Number(value))}
-                />
-                <Tooltip
-                  bodyText={lockAspectRatio ? 'Unlock Aspect Ratio' : 'Lock Aspect Ratio'}
-                  placement="Top"
-                >
-                  <IconButton
-                    className={`iw-config__lock-btn${lockAspectRatio ? ' iw-config__lock-btn--active' : ''}`}
-                    icon={
-                      lockAspectRatio
-                        ? <Lock size={16} aria-hidden="true" />
-                        : <Unlock size={16} aria-hidden="true" />
-                    }
-                    size="Medium"
-                    accessibilityLabel={lockAspectRatio ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
-                    onClick={handleEventAspectLockToggle}
-                  />
-                </Tooltip>
-              </div>
             </div>
 
             {/* 5. UNS Path */}
