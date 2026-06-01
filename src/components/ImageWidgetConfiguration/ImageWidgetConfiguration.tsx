@@ -103,11 +103,15 @@ function buildDynamicBindingPathList(uiConfig: unknown): Array<{ key: string; to
 function buildEnvelope(
   existing: ImageWidgetEnvelope | undefined,
   uiConfig: ImageWidgetUIConfig,
+  width: number,
+  height: number,
 ): ImageWidgetEnvelope {
   return {
     _id: existing?._id ?? `iw_${Date.now()}`,
     type: 'ImageWidget',
     general: existing?.general ?? { title: '' },
+    width,
+    height,
     uiConfig,
     dynamicBindingPathList: buildDynamicBindingPathList(uiConfig),
   };
@@ -120,48 +124,6 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-}
-
-const STAGING_BASE = 'https://stagingsv.iosense.io/api';
-
-function mimeToExt(mimeType: string): string {
-  const map: Record<string, string> = {
-    'image/jpeg': 'jpg',
-    'image/jpg': 'jpg',
-    'image/png': 'png',
-    'image/svg+xml': 'svg',
-    'application/json': 'json',
-    'image/gif': 'gif',
-    'image/webp': 'webp',
-  };
-  return map[mimeType] ?? 'jpg';
-}
-
-async function getS3SignedUrl(
-  authentication: string,
-  file: File,
-): Promise<{ signedUrl: string; publicUrl: string }> {
-  const ext = mimeToExt(file.type);
-  const filename = `IoLens-${Date.now()}.${ext}`;
-  const res = await fetch(`${STAGING_BASE}/account/s3/signedUrl`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${authentication}`,
-    },
-    body: JSON.stringify({ folderName: 'IOLens', filename, contentType: file.type }),
-  });
-  const json = await res.json();
-  if (!json.success) throw new Error('Failed to get S3 signed URL');
-  const signedUrl = json.data as string;
-  const publicUrl = signedUrl.split('?')[0];
-  return { signedUrl, publicUrl };
-}
-
-async function uploadImageToS3(authentication: string, file: File): Promise<string> {
-  const { signedUrl, publicUrl } = await getS3SignedUrl(authentication, file);
-  await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-  return publicUrl;
 }
 
 const OPERATOR_OPTIONS = ['==', '!=', '>', '<', '>=', '<='] as const;
@@ -222,13 +184,13 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     config?.uiConfig?.defaultImage ?? '',
   );
   const [defaultImageFiles, setDefaultImageFiles] = useState<UploadFile[]>(
-    config?.uiConfig.defaultImage ? [uploadFileFromUrl(config.uiConfig.defaultImage)] : [],
+    config?.uiConfig?.defaultImage ? [uploadFileFromUrl(config.uiConfig.defaultImage)] : [],
   );
   const [defaultWidth, setDefaultWidth] = useState<number>(
-    config?.uiConfig.defaultWidth ?? 0,
+    config?.width ?? 0,
   );
   const [defaultHeight, setDefaultHeight] = useState<number>(
-    config?.uiConfig.defaultHeight ?? 0,
+    config?.height ?? 0,
   );
   const [defaultLockAspect, setDefaultLockAspect] = useState(true);
   const [defaultAspectRatio, setDefaultAspectRatio] = useState<number | null>(null);
@@ -294,17 +256,17 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   // -------------------------------------------------------------------------
   useEffect(() => {
     if (config) {
-      const di = config.uiConfig.defaultImage ?? '';
+      const di = config.uiConfig?.defaultImage ?? '';
       setDefaultImage(di);
       setDefaultImageFiles(di ? [uploadFileFromUrl(di)] : []);
-      const dw = config.uiConfig.defaultWidth ?? 0;
-      const dh = config.uiConfig.defaultHeight ?? 0;
+      const dw = config.width ?? 0;
+      const dh = config.height ?? 0;
       setDefaultWidth(dw);
       setDefaultHeight(dh);
       setDefaultAspectRatio(dw > 0 && dh > 0 ? dw / dh : null);
-      setLinkEnabled(config.uiConfig.linkConfig.enabled ?? false);
-      setLinkUrl(config.uiConfig.linkConfig.url ?? '');
-      setEvents(config.uiConfig.events ?? []);
+      setLinkEnabled(config.uiConfig?.linkConfig?.enabled ?? false);
+      setLinkUrl(config.uiConfig?.linkConfig?.url ?? '');
+      setEvents(config.uiConfig?.events ?? []);
     }
   }, [config?._id]);
 
@@ -330,8 +292,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
 
     const uiConfig: ImageWidgetUIConfig = {
       defaultImage:  resolved.defaultImage,
-      defaultWidth:  resolved.defaultWidth,
-      defaultHeight: resolved.defaultHeight,
       linkConfig: {
         enabled: resolved.linkEnabled,
         url: resolved.linkUrl,
@@ -345,7 +305,9 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       },
     };
 
-    onChange(buildEnvelope(config, uiConfig));
+    const envelope = buildEnvelope(config, uiConfig, resolved.defaultWidth, resolved.defaultHeight);
+    console.log('[ImageWidgetConfiguration] envelope:', envelope);
+    onChange(envelope);
   }
 
   // -------------------------------------------------------------------------

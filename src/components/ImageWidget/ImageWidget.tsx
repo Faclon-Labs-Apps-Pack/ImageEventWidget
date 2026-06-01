@@ -12,6 +12,9 @@ interface ImageWidgetProps {
   config: ImageWidgetUIConfig;
   data: DataEntry[];
   onEvent: (event: WidgetEvent) => void;
+  /** Default rendered image size (px, 0 = auto). Top-level envelope keys, outside uiConfig. */
+  width?: number;
+  height?: number;
   /** Called when "Configure Widget" is clicked in the no-config empty state. Host should open the file picker / configurator. */
   onConfigureClick?: () => void;
 }
@@ -92,21 +95,27 @@ function NoConfigScreen({
   );
 }
 
-export function ImageWidget({ config, data, onEvent: _onEvent }: ImageWidgetProps) {
-  if (!config) return <NoConfigScreen />;
+export function ImageWidget({ config, data, onEvent: _onEvent, width, height, onConfigureClick }: ImageWidgetProps) {
+  if (!config) return <NoConfigScreen wrapInCard onConfigureClick={onConfigureClick} />;
+
+  const wrapInCard = config.style?.card?.wrapInCard ?? true;
+  const widgetClass = `iw-widget${wrapInCard ? '' : ' iw-widget--no-wrap'}`;
+
+  const events = config.events ?? [];
+  const rules = config.rules ?? [];
 
   // If any event or rule has a topic binding but data hasn't loaded, show skeleton
-  const hasBindings = config.events.some((e) => e.topic) || config.rules.some((r) => r.topic);
-  
+  const hasBindings = events.some((e) => e.topic) || rules.some((r) => r.topic);
+
 
   // Evaluate events in order — find first matching
   let activeImage = config.defaultImage;
   let activeAlignment: ImageEventConfig['alignment'] = 'Center';
-  let activeWidth = config.defaultWidth ?? 0;
-  let activeHeight = config.defaultHeight ?? 0;
+  let activeWidth = width ?? 0;
+  let activeHeight = height ?? 0;
 
-  for (let i = 0; i < config.events.length; i++) {
-    const evt = config.events[i];
+  for (let i = 0; i < events.length; i++) {
+    const evt = events[i];
     if (evt.topic) {
       const resolved = getValue(`events[${i}].topic`, config, data);
       if (evaluateCondition(evt.operator, evt.value, resolved)) {
@@ -146,7 +155,7 @@ export function ImageWidget({ config, data, onEvent: _onEvent }: ImageWidgetProp
     : {};
 
   const linkUrl =
-    config.linkConfig.enabled && isValidLinkUrl(config.linkConfig.url)
+    config.linkConfig?.enabled && isValidLinkUrl(config.linkConfig.url)
       ? config.linkConfig.url.trim()
       : null;
 

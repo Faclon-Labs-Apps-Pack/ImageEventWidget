@@ -93,8 +93,6 @@ export interface ImageEventConfig {
 
 export interface ImageWidgetUIConfig {
   defaultImage: string;    // base64 data URL — shown when no rule matches
-  defaultWidth: number;    // px (0 = auto)
-  defaultHeight: number;   // px (0 = auto)
   linkConfig: {
     enabled: boolean;
     url: string;           // URL to navigate to when image is clicked
@@ -110,6 +108,9 @@ export interface ImageWidgetEnvelope {
   type: 'ImageWidget';
   general: { title: string };
   timeConfig?: TimeConfig;
+  /** Default rendered size of the widget's image, in px (0 = auto). Top-level, outside uiConfig. */
+  width: number;
+  height: number;
   uiConfig: ImageWidgetUIConfig;
   dynamicBindingPathList: Array<BindingEntry>;
 }

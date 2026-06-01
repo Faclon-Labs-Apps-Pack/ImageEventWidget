@@ -9,8 +9,6 @@ import './App.css';
 
 const EMPTY_UI_CONFIG: ImageWidgetUIConfig = {
   defaultImage: '',
-  defaultWidth: 0,
-  defaultHeight: 0,
   linkConfig: { enabled: false, url: '' },
   events: [],
   style: { card: { wrapInCard: false, bg: '' } },
@@ -70,12 +68,19 @@ export default function App() {
   return (
     <div className="app">
       <div className="app__config">
-        <ImageWidgetConfiguration config={envelope} authentication={auth} onChange={setEnvelope} />
+        <ImageWidgetConfiguration
+          config={envelope}
+          authentication={auth}
+          onChange={setEnvelope}
+          onBack={() => console.log('[App] configurator onBack')}
+        />
       </div>
       <div className="app__widget">
         <ImageWidget
           config={envelope?.uiConfig ?? EMPTY_UI_CONFIG}
           data={data}
+          width={envelope?.width}
+          height={envelope?.height}
           onEvent={handleEvent}
           onConfigureClick={handleConfigureClick}
         />
