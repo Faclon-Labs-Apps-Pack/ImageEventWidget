@@ -28,11 +28,18 @@
   text-overflow: ellipsis;
 }
 
+/* SDK IconButton defaults to opacity 0.57 + gray. Override for the back-arrow to read at full intensity in the header. */
+.iw-config__back-btn.fds-icon-btn {
+  opacity: 1;
+  color: var(--text-default-primary, #050505);
+}
+
 .iw-config__section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-05, 16px);
   padding: var(--spacing-05, 16px);
+  min-width: 0;
 }
 
 .iw-config__section-label {
@@ -45,14 +52,44 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-03, 8px);
+  min-width: 0;
 }
 
-.iw-config__upload-cta,
-.iw-config__upload-cta .fds-file-upload,
-.iw-config__upload-cta .fds-upload-cta__root {
+/* Constrain the SDK FileUpload to its host panel width — SDK defaults to a 350 px fixed width. */
+.iw-config .fds-file-upload {
   width: 100% !important;
   max-width: 100% !important;
+  min-width: 0 !important;
   box-sizing: border-box !important;
+}
+
+.iw-config .fds-upload-cta__root,
+.iw-config .fds-upload-item,
+.iw-config .fds-upload-item__root {
+  width: auto !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* Long filenames must not widen the panel — truncate inside the uploaded-file row. */
+.iw-config .fds-file-upload__list,
+.iw-config .fds-upload-item__body,
+.iw-config .fds-upload-item__body--top,
+.iw-config .fds-upload-item__info,
+.iw-config .fds-upload-item__name-group {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.iw-config .fds-upload-item__name,
+.iw-config .fds-upload-item__name--wide {
+  max-width: 100% !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .iw-config__preview {
@@ -69,6 +106,14 @@
   border-radius: var(--border-radius-medium, 4px);
 }
 
+.iw-config__preview-thumb--json {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-secondary, #f4f5f6);
+  color: var(--text-default-tertiary, #616d75);
+}
+
 .iw-config__switch-row {
   display: flex;
   align-items: center;
@@ -76,21 +121,24 @@
   padding: var(--spacing-03, 8px) 0;
 }
 
+.iw-config__switch-row--disabled .fds-field-header__label {
+  color: var(--text-default-disabled, rgba(67, 75, 81, 0.4));
+}
+
 .iw-config__accordion-section {
   display: flex;
   flex-direction: column;
 }
 
-.iw-config__event-list,
-.iw-config__rule-list {
+.iw-config__event-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-02, 4px);
-  padding: var(--spacing-03, 8px) var(--spacing-05, 16px);
+  gap: var(--spacing-03, 8px);
+  padding: 0;
+  width: 100%;
 }
 
-.iw-config__event-row,
-.iw-config__rule-row {
+.iw-config__event-row {
   display: flex;
   align-items: center;
   gap: var(--spacing-03, 8px);
@@ -106,8 +154,7 @@
   flex-shrink: 0;
 }
 
-.iw-config__event-label,
-.iw-config__rule-label {
+.iw-config__event-label {
   flex: 1;
   font-size: 12px;
   color: var(--text-default-primary, #050505);
@@ -116,64 +163,19 @@
   white-space: nowrap;
 }
 
-.iw-config__rule-detail {
-  font-size: 11px;
-  color: var(--text-default-tertiary, #616d75);
-  white-space: nowrap;
-}
-
-.iw-config__list-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-02, 4px);
-}
-
-.iw-config__action-btn {
-  background: none;
+/* Accordion + button — feather Plus icon, no corner radius, no background. */
+.iw-config__add-btn.fds-icon-btn {
   border: none;
-  cursor: pointer;
-  color: var(--text-default-tertiary, #616d75);
-  padding: 3px;
-  display: flex;
-  align-items: center;
-  border-radius: var(--border-radius-small, 2px);
-  flex-shrink: 0;
-}
-
-.iw-config__action-btn:hover {
+  border-radius: 0;
+  background: transparent;
   color: var(--text-default-secondary, #292f32);
-  background: var(--background-secondary-hover, rgba(67,75,81,0.08));
+  opacity: 1;
 }
 
-.iw-config__action-btn--danger:hover {
-  color: var(--text-feedback-negative, #d91f11);
-  background: var(--background-feedback-negative-subtle, rgba(217,31,17,0.06));
-}
-
-.iw-config__delete-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-default-tertiary, #616d75);
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.iw-config__delete-btn:hover {
-  color: var(--text-feedback-negative, #d91f11);
-}
-
-.iw-config__add-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-default-secondary, #292f32);
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  line-height: 1;
+.iw-config__add-btn.fds-icon-btn:disabled,
+.iw-config__add-btn.fds-icon-btn[disabled] {
+  color: var(--text-default-disabled, rgba(67, 75, 81, 0.4));
+  cursor: not-allowed;
 }
 
 .iw-config__empty-hint {
@@ -182,53 +184,231 @@
   padding: var(--spacing-03, 8px) var(--spacing-05, 16px);
 }
 
-/* Modal bodies */
+/* Side-panel modal — width fixed to match panel column; height derived from anchor-y CSS var written by JS. */
+.iw-event-modal.fds-modal__backdrop--transparent {
+  pointer-events: auto;
+}
+
 .iw-event-modal .fds-modal {
   width: 340px;
-}
-
-.iw-rule-modal .fds-modal {
-  width: 300px;
-}
-
-.iw-event-modal__body,
-.iw-rule-modal__body {
+  max-height: calc(100vh - var(--iw-anchor-y, 16px) - 16px);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-04, 12px);
+  overflow: hidden;
 }
 
-.iw-event-modal__size-row {
+.iw-event-modal .fds-modal__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.iw-event-modal__body {
   display: flex;
-  align-items: flex-end;
-  gap: var(--spacing-03, 8px);
+  flex-direction: column;
+  gap: var(--spacing-05, 16px);
+  padding: var(--spacing-05, 16px);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
-.iw-event-modal__size-row > :first-child,
-.iw-event-modal__size-row > :nth-child(2) {
-  flex: 1;
+.iw-event-modal__section-title {
+  margin: 0;
+  color: var(--text-default-primary, #050505);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.iw-event-modal__radio-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-04, 12px);
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.iw-event-modal__toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-04, 12px);
+  width: 100%;
+  min-height: 24px;
+}
+
+.iw-event-modal__toggle-label {
+  flex: 1 0 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-default-primary, #050505);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.iw-event-modal__frame-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-05, 16px);
+  width: 100%;
   min-width: 0;
 }
 
-.iw-event-modal__lock-btn {
-  background: none;
-  border: 1px solid var(--border-gray-default, #c8cdd0);
-  border-radius: var(--border-radius-small, 2px);
-  cursor: pointer;
+.iw-event-modal__frame-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Default-image preview modal */
+.iw-preview-modal .fds-modal {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 80vh;
+}
+
+.iw-preview-modal__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 60vh;
+  object-fit: contain;
+}
+
+.iw-preview-modal__placeholder {
+  padding: var(--spacing-08, 32px);
+  text-align: center;
   color: var(--text-default-tertiary, #616d75);
-  padding: 6px;
+  font-size: 13px;
+}
+
+/* Lottie playback — player column + controls bar */
+.iw-preview-modal__player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-04, 12px);
+  width: 100%;
+}
+
+.iw-preview-modal__lottie {
+  width: 100%;
+  max-height: 50vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  height: 36px;
-  width: 28px;
-  margin-bottom: 0;
 }
 
-.iw-event-modal__lock-btn--active {
-  color: var(--text-brand-default, #1364f1);
-  border-color: var(--border-brand-default, #1364f1);
+.iw-preview-modal__lottie > svg,
+.iw-preview-modal__lottie > canvas {
+  max-width: 100%;
+  max-height: 50vh;
+}
+
+.iw-preview-modal__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-03, 8px);
+  width: 100%;
+  padding: var(--spacing-03, 8px) var(--spacing-04, 12px);
+  background: var(--background-surface-intense, #ffffff);
+  border: 1px solid var(--border-gray-muted, rgba(67, 75, 81, 0.16));
+  border-radius: var(--global-border-radius-medium, 4px);
+  box-sizing: border-box;
+}
+
+.iw-preview-modal__scrubber {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 4px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--border-gray-muted, rgba(67, 75, 81, 0.16));
+  border-radius: var(--global-border-radius-max, 1000px);
+  outline: none;
+  cursor: pointer;
+}
+
+.iw-preview-modal__scrubber::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-brand-default, #1364f1);
+  border: 2px solid var(--background-surface-intense, #ffffff);
+  box-shadow: 0 0 0 1px var(--border-gray-muted, rgba(67, 75, 81, 0.32));
+  cursor: pointer;
+}
+
+.iw-preview-modal__scrubber::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-brand-default, #1364f1);
+  border: 2px solid var(--background-surface-intense, #ffffff);
+  box-shadow: 0 0 0 1px var(--border-gray-muted, rgba(67, 75, 81, 0.32));
+  cursor: pointer;
+}
+
+.iw-preview-modal__scrubber:focus-visible {
+  outline: 2px solid var(--text-brand-default, #1364f1);
+  outline-offset: 2px;
+}
+
+.iw-preview-modal__time {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-02, 4px);
+  color: var(--text-default-secondary, #292f32);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.iw-preview-modal__time-sep {
+  color: var(--text-default-tertiary, #616d75);
+  margin: 0 var(--spacing-01, 2px);
+}
+
+.iw-preview-modal__frames {
+  color: var(--text-default-tertiary, #616d75);
+  font-weight: 400;
+}
+
+.iw-config__form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-03, 8px);
+  width: 100%;
+  min-width: 0;
+}
+
+.iw-config__size-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: var(--spacing-03, 8px);
+  min-width: 0;
+}
+
+.iw-config__size-row > :first-child,
+.iw-config__size-row > :nth-child(2) {
+  min-width: 0;
+}
+
+/* SDK IconButton wrapped as the aspect-ratio lock — no border, just the icon. */
+.iw-config__lock-btn.fds-icon-btn,
+.iw-config__lock-btn--active.fds-icon-btn {
+  border: none;
+  background: transparent;
+  height: 36px;
+  width: 28px;
+  opacity: 1;
+  color: var(--text-default-secondary, #292f32);
 }
 
 .iw-config__field-help {
