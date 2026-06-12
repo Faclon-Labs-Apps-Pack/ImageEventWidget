@@ -95,24 +95,16 @@ function NoConfigScreen({
   );
 }
 
-export function ImageWidget({ config, data, onEvent: _onEvent, width, height, onConfigureClick }: ImageWidgetProps) {
+export function ImageWidget({ config, data, onEvent: _onEvent, onConfigureClick }: ImageWidgetProps) {
   if (!config) return <NoConfigScreen wrapInCard onConfigureClick={onConfigureClick} />;
 
   const wrapInCard = config.style?.card?.wrapInCard ?? true;
   const widgetClass = `iw-widget${wrapInCard ? '' : ' iw-widget--no-wrap'}`;
 
   const events = config.events ?? [];
-  const rules = config.rules ?? [];
-
-  // If any event or rule has a topic binding but data hasn't loaded, show skeleton
-  const hasBindings = events.some((e) => e.topic) || rules.some((r) => r.topic);
-
 
   // Evaluate events in order — find first matching
   let activeImage = config.defaultImage;
-  let activeAlignment: ImageEventConfig['alignment'] = 'Center';
-  let activeWidth = width ?? 0;
-  let activeHeight = height ?? 0;
 
   for (let i = 0; i < events.length; i++) {
     const evt = events[i];
@@ -120,17 +112,10 @@ export function ImageWidget({ config, data, onEvent: _onEvent, width, height, on
       const resolved = getValue(`events[${i}].topic`, config, data);
       if (evaluateCondition(evt.operator, evt.value, resolved)) {
         activeImage = evt.image || config.defaultImage;
-        activeAlignment = evt.alignment;
-        activeWidth = evt.width;
-        activeHeight = evt.height;
         break;
       }
     } else if (!evt.topic && evt.image) {
-      // No condition — always show this event (use as fallback with alignment/size)
       activeImage = evt.image;
-      activeAlignment = evt.alignment;
-      activeWidth = evt.width;
-      activeHeight = evt.height;
       break;
     }
   }
@@ -139,57 +124,22 @@ export function ImageWidget({ config, data, onEvent: _onEvent, width, height, on
     return <NoConfigScreen wrapInCard={wrapInCard} onConfigureClick={onConfigureClick} />;
   }
 
-  const axes = alignmentAxes(activeAlignment);
-
-  const w = activeWidth || 0;
-  const h = activeHeight || 0;
-  const hasExplicitSize = w > 0 || h > 0;
-  const assetStyle: React.CSSProperties = hasExplicitSize
-    ? {
-        width: w > 0 ? `${w}px` : 'auto',
-        height: h > 0 ? `${h}px` : 'auto',
-        maxWidth: 'none',
-        maxHeight: 'none',
-        objectFit: 'fill',
-      }
-    : {};
-
   const linkUrl =
     config.linkConfig?.enabled && isValidLinkUrl(config.linkConfig.url)
       ? config.linkConfig.url.trim()
       : null;
 
   return (
-    <div
-      className={widgetClass}
-      style={{ justifyContent: axes.h, alignItems: axes.v }}
-    >
+    <div className={widgetClass}>
       {linkUrl ? (
         <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="iw-widget__link">
-          <ActiveAsset src={activeImage} style={assetStyle} />
+          <ActiveAsset src={activeImage} style={{}} />
         </a>
       ) : (
-        <ActiveAsset src={activeImage} style={assetStyle} />
+        <ActiveAsset src={activeImage} style={{}} />
       )}
     </div>
   );
-}
-
-function alignmentAxes(a: ImageEventConfig['alignment']): {
-  v: 'flex-start' | 'center' | 'flex-end';
-  h: 'flex-start' | 'center' | 'flex-end';
-} {
-  const v: 'flex-start' | 'center' | 'flex-end' = a.startsWith('Top')
-    ? 'flex-start'
-    : a.startsWith('Bottom')
-      ? 'flex-end'
-      : 'center';
-  const h: 'flex-start' | 'center' | 'flex-end' = a.endsWith('Left')
-    ? 'flex-start'
-    : a.endsWith('Right')
-      ? 'flex-end'
-      : 'center';
-  return { v, h };
 }
 
 function ActiveAsset({ src, style }: { src: string; style: React.CSSProperties }) {

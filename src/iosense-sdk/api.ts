@@ -1,6 +1,6 @@
 import { BindingEntry, SeriesPayload, SeriesMeta, SeriesSlot } from './types';
 
-const STAGING_BASE = 'https://stagingsv.iosense.io/api';
+const STAGING_BASE = 'https://appserver.iosense.io/api';
 const GRAPH = 'iosense_test_uns';
 
 function isRawSeriesItem(item: Record<string, unknown>): boolean {

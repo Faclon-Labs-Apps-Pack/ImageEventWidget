@@ -203,9 +203,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   const [events, setEvents] = useState<ImageEventConfig[]>(
     config?.uiConfig?.events ?? [],
   );
-  const [rules, setRules] = useState<ImageRuleConfig[]>(
-    config?.uiConfig?.rules ?? [],
-  );
 
   // Accordion expand state
   const [eventsExpanded, setEventsExpanded] = useState(false);
@@ -398,8 +395,8 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               label: newEventName.trim(),
               image: newEventImage,
               alignment: newEventAlignment,
-              width: newEventWidth,
-              height: newEventHeight,
+              width: 0,
+              height: 0,
               topic: newEventTopic,
               operator: newEventOperator,
               value: newEventValue,
@@ -415,8 +412,8 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
         label: newEventName.trim(),
         image: newEventImage,
         alignment: newEventAlignment,
-        width: newEventWidth,
-        height: newEventHeight,
+        width: 0,
+        height: 0,
         topic: newEventTopic,
         operator: newEventOperator,
         value: newEventValue,
@@ -481,64 +478,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     return existingFrameRanges.some((r) => !(f < r.start || s > r.end));
   })();
 
-  // -------------------------------------------------------------------------
-  // Size handlers — proportional update from STORED ratio (no drift)
-  // -------------------------------------------------------------------------
-  function handleDefaultWidthChange(value: number | null) {
-    const w = Math.max(0, value ?? 0);
-    setDefaultWidth(w);
-    if (defaultLockAspect && defaultAspectRatio && defaultAspectRatio > 0) {
-      const h = Math.max(1, Math.round(w / defaultAspectRatio));
-      setDefaultHeight(h);
-      emit({ defaultWidth: w, defaultHeight: h });
-    } else {
-      emit({ defaultWidth: w });
-    }
-  }
-
-  function handleDefaultHeightChange(value: number | null) {
-    const h = Math.max(0, value ?? 0);
-    setDefaultHeight(h);
-    if (defaultLockAspect && defaultAspectRatio && defaultAspectRatio > 0) {
-      const w = Math.max(1, Math.round(h * defaultAspectRatio));
-      setDefaultWidth(w);
-      emit({ defaultWidth: w, defaultHeight: h });
-    } else {
-      emit({ defaultHeight: h });
-    }
-  }
-
-  function handleDefaultAspectLockToggle() {
-    const next = !defaultLockAspect;
-    if (next) {
-      setDefaultAspectRatio(defaultWidth > 0 && defaultHeight > 0 ? defaultWidth / defaultHeight : null);
-    }
-    setDefaultLockAspect(next);
-  }
-
-  function handleEventWidthChange(value: number | null) {
-    const w = Math.max(0, value ?? 0);
-    setNewEventWidth(w);
-    if (lockAspectRatio && aspectRatio && aspectRatio > 0) {
-      setNewEventHeight(Math.max(1, Math.round(w / aspectRatio)));
-    }
-  }
-
-  function handleEventHeightChange(value: number | null) {
-    const h = Math.max(0, value ?? 0);
-    setNewEventHeight(h);
-    if (lockAspectRatio && aspectRatio && aspectRatio > 0) {
-      setNewEventWidth(Math.max(1, Math.round(h * aspectRatio)));
-    }
-  }
-
-  function handleEventAspectLockToggle() {
-    const next = !lockAspectRatio;
-    if (next) {
-      setAspectRatio(newEventWidth > 0 && newEventHeight > 0 ? newEventWidth / newEventHeight : null);
-    }
-    setLockAspectRatio(next);
-  }
 
   // -------------------------------------------------------------------------
   // Render
@@ -575,7 +514,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               if (!files || files.length === 0 || !authentication) return;
               const file = files[0];
               const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
-              // Capture natural dimensions before uploading
               let capturedW = 0;
               let capturedH = 0;
               if (isJson) {
@@ -600,8 +538,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               }
               setDefaultWidth(capturedW);
               setDefaultHeight(capturedH);
-              setDefaultAspectRatio(capturedW > 0 && capturedH > 0 ? capturedW / capturedH : null);
-              setDefaultLockAspect(true);
 
               const pending = uploadFileFromNative(
                 new File([file], file.name, { type: file.type }),
@@ -635,8 +571,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               setDefaultImageFiles([]);
               setDefaultWidth(0);
               setDefaultHeight(0);
-              setDefaultAspectRatio(null);
-              setDefaultLockAspect(true);
               emit({ defaultImage: '', defaultWidth: 0, defaultHeight: 0 });
             }}
           />
@@ -708,6 +642,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                     key={evt.id}
                     title={evt.label}
                     subtitle={subtitle}
+                    onClick={(e: React.MouseEvent) => openEditEventModal(evt, e)}
                     trailingItems={
                       <ListCardTrailingItem trailing="Slot">
                         <IconButton
@@ -843,30 +778,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               onFilesSelect={async (files: FileList) => {
                 if (!files || files.length === 0 || !authentication) return;
                 const file = files[0];
-                const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
-                // Read natural dimensions before uploading
-                if (isJson) {
-                  try {
-                    const text = await file.text();
-                    const json = JSON.parse(text);
-                    const w = typeof json.w === 'number' ? json.w : 0;
-                    const h = typeof json.h === 'number' ? json.h : 0;
-                    if (w > 0) setNewEventWidth(w);
-                    if (h > 0) setNewEventHeight(h);
-                    setAspectRatio(w > 0 && h > 0 ? w / h : null);
-                    setLockAspectRatio(true);
-                  } catch { /* leave dimensions blank */ }
-                } else {
-                  const b64 = await fileToBase64(file);
-                  const img = new window.Image();
-                  img.onload = () => {
-                    setNewEventWidth(img.naturalWidth);
-                    setNewEventHeight(img.naturalHeight);
-                    setAspectRatio(img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : null);
-                    setLockAspectRatio(true);
-                  };
-                  img.src = b64;
-                }
                 setNewEventFiles([uploadFileFromNative(
                   new File([file], file.name, { type: file.type }),
                   'loading',
@@ -893,10 +804,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               onRemove={() => {
                 setNewEventImage('');
                 setNewEventFiles([]);
-                setNewEventWidth(0);
-                setNewEventHeight(0);
-                setAspectRatio(null);
-                setLockAspectRatio(true);
               }}
             />
             )}
