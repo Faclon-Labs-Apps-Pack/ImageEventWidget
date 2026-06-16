@@ -105,17 +105,18 @@ export function ImageWidget({ config, data, onEvent: _onEvent, onConfigureClick 
 
   // Evaluate events in order — find first matching
   let activeImage = config.defaultImage;
+  let activeFrameSegment: [number, number] | undefined;
 
   for (let i = 0; i < events.length; i++) {
     const evt = events[i];
-    if (evt.topic) {
-      const resolved = getValue(`events[${i}].topic`, config, data);
-      if (evaluateCondition(evt.operator, evt.value, resolved)) {
-        activeImage = evt.image || config.defaultImage;
-        break;
+    const matches = evt.topic
+      ? evaluateCondition(evt.operator, evt.value, getValue(`events[${i}].topic`, config, data))
+      : !!evt.image;
+    if (matches) {
+      activeImage = evt.image || config.defaultImage;
+      if (evt.frameRangeEnabled && (evt.startFrame || evt.endFrame)) {
+        activeFrameSegment = [evt.startFrame ?? 0, evt.endFrame ?? 0];
       }
-    } else if (!evt.topic && evt.image) {
-      activeImage = evt.image;
       break;
     }
   }
@@ -133,16 +134,24 @@ export function ImageWidget({ config, data, onEvent: _onEvent, onConfigureClick 
     <div className={widgetClass}>
       {linkUrl ? (
         <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="iw-widget__link">
-          <ActiveAsset src={activeImage} style={{}} />
+          <ActiveAsset src={activeImage} style={{}} frameSegment={activeFrameSegment} />
         </a>
       ) : (
-        <ActiveAsset src={activeImage} style={{}} />
+        <ActiveAsset src={activeImage} style={{}} frameSegment={activeFrameSegment} />
       )}
     </div>
   );
 }
 
-function ActiveAsset({ src, style }: { src: string; style: React.CSSProperties }) {
+function ActiveAsset({
+  src,
+  style,
+  frameSegment,
+}: {
+  src: string;
+  style: React.CSSProperties;
+  frameSegment?: [number, number];
+}) {
   const lottie = useLottieAnimation(isJsonAsset(src) ? src : undefined);
 
   if (isJsonAsset(src)) {
@@ -154,6 +163,7 @@ function ActiveAsset({ src, style }: { src: string; style: React.CSSProperties }
           animationData={lottie.data}
           loop
           autoplay
+          initialSegment={frameSegment}
         />
       );
     }
