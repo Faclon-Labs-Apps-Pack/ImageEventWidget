@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Lock, Unlock, X, FileText, ArrowLeft, Play, Pause, Plus,
   ArrowUpLeft, ArrowUp, ArrowUpRight, Circle, ArrowRight,
-  ArrowDownLeft, ArrowDown, ArrowDownRight,
+  ArrowDownLeft, ArrowDown, ArrowDownRight, MoreVertical, Download,
 } from 'react-feather';
 import { ListCard, ListCardTrailingItem } from '@faclon-labs/design-sdk/ListCard';
 import { FileUpload, type UploadFile } from '@faclon-labs/design-sdk/UploadCta';
@@ -156,6 +156,24 @@ function uploadFileFromNative(native: File, state: UploadFile['state'], progress
   return f;
 }
 
+async function downloadAsset(url: string): Promise<void> {
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = fileNameFromUrl(url);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    console.error('[ImageWidget] download failed:', err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -207,11 +225,19 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   // Accordion expand state
   const [eventsExpanded, setEventsExpanded] = useState(false);
 
+  // Drag-and-drop reorder state
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   // Modal positioning
   const configRef = useRef<HTMLDivElement>(null);
   const eventsAccordionRef = useRef<HTMLDivElement>(null);
   const [modalX, setModalX] = useState(0);
   const [modalY, setModalY] = useState(0);
+
+  // Hidden file inputs used to trigger re-upload from the row icon
+  const defaultFileInputRef = useRef<HTMLInputElement>(null);
+  const eventFileInputRef = useRef<HTMLInputElement>(null);
 
   // Upload loading states
   const [isUploadingDefault, setIsUploadingDefault] = useState(false);
@@ -388,6 +414,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     if (!canSubmit) return;
     let updated: ImageEventConfig[];
     if (editingEventId) {
+      const isLottie = isJsonAsset(newEventImage);
       updated = events.map((e) =>
         e.id === editingEventId
           ? {
@@ -400,13 +427,14 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               topic: newEventTopic,
               operator: newEventOperator,
               value: newEventValue,
-              frameRangeEnabled: newEventFrameRange,
-              startFrame: newEventStartFrame,
-              endFrame: newEventEndFrame,
+              frameRangeEnabled: isLottie ? newEventFrameRange : false,
+              startFrame: isLottie ? newEventStartFrame : 0,
+              endFrame: isLottie ? newEventEndFrame : 0,
             }
           : e,
       );
     } else {
+      const isLottie = isJsonAsset(newEventImage);
       const newEvent: ImageEventConfig = {
         id: `evt_${Date.now()}`,
         label: newEventName.trim(),
@@ -417,9 +445,9 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
         topic: newEventTopic,
         operator: newEventOperator,
         value: newEventValue,
-        frameRangeEnabled: newEventFrameRange,
-        startFrame: newEventStartFrame,
-        endFrame: newEventEndFrame,
+        frameRangeEnabled: isLottie ? newEventFrameRange : false,
+        startFrame: isLottie ? newEventStartFrame : 0,
+        endFrame: isLottie ? newEventEndFrame : 0,
       };
       updated = [...events, newEvent];
     }
@@ -427,6 +455,80 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     emit({ events: updated });
     setEventsExpanded(true);
     handleCloseAddEvent();
+  }
+
+  // -------------------------------------------------------------------------
+  // Upload handlers — shared by initial select + reupload re-trigger
+  // -------------------------------------------------------------------------
+  async function processDefaultImageFile(file: File) {
+    if (!authentication) return;
+    const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
+    let capturedW = 0;
+    let capturedH = 0;
+    if (isJson) {
+      try {
+        const text = await file.text();
+        const json = JSON.parse(text);
+        if (typeof json.w === 'number') capturedW = json.w;
+        if (typeof json.h === 'number') capturedH = json.h;
+      } catch { /* leave dimensions blank */ }
+    } else {
+      const b64 = await fileToBase64(file);
+      await new Promise<void>((resolve) => {
+        const img = new window.Image();
+        img.onload = () => {
+          capturedW = img.naturalWidth;
+          capturedH = img.naturalHeight;
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = b64;
+      });
+    }
+    setDefaultWidth(capturedW);
+    setDefaultHeight(capturedH);
+
+    setDefaultImageFiles([uploadFileFromNative(file, 'loading', 0)]);
+    setIsUploadingDefault(true);
+    try {
+      const publicUrl = await uploadImageToS3(authentication, file);
+      setDefaultImage(publicUrl);
+      setDefaultImageFiles([uploadFileFromNative(file, 'completed')]);
+      emit({ defaultImage: publicUrl, defaultWidth: capturedW, defaultHeight: capturedH });
+    } catch (err) {
+      console.error('[ImageWidget] default image upload failed:', err);
+      setDefaultImageFiles([uploadFileFromNative(file, 'failed')]);
+    } finally {
+      setIsUploadingDefault(false);
+    }
+  }
+
+  async function processEventImageFile(file: File) {
+    if (!authentication) return;
+    setNewEventFiles([uploadFileFromNative(file, 'loading', 0)]);
+    setIsUploadingEventImage(true);
+    try {
+      const publicUrl = await uploadImageToS3(authentication, file);
+      setNewEventImage(publicUrl);
+      setNewEventFiles([uploadFileFromNative(file, 'completed')]);
+    } catch (err) {
+      console.error('[ImageWidget] event image upload failed:', err);
+      setNewEventFiles([uploadFileFromNative(file, 'failed')]);
+    } finally {
+      setIsUploadingEventImage(false);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Reorder helper — moves event from `from` index to `to` index (priority change)
+  // -------------------------------------------------------------------------
+  function reorderEvents(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || from >= events.length || to >= events.length) return;
+    const next = events.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setEvents(next);
+    emit({ events: next });
   }
 
   // -------------------------------------------------------------------------
@@ -510,61 +612,10 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
             isDisabled={isUploadingDefault}
             disableBuiltInPreview
             onPreview={() => setDefaultPreviewOpen(true)}
-            onFilesSelect={async (files: FileList) => {
-              if (!files || files.length === 0 || !authentication) return;
-              const file = files[0];
-              const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
-              let capturedW = 0;
-              let capturedH = 0;
-              if (isJson) {
-                try {
-                  const text = await file.text();
-                  const json = JSON.parse(text);
-                  if (typeof json.w === 'number') capturedW = json.w;
-                  if (typeof json.h === 'number') capturedH = json.h;
-                } catch { /* leave dimensions blank */ }
-              } else {
-                const b64 = await fileToBase64(file);
-                await new Promise<void>((resolve) => {
-                  const img = new window.Image();
-                  img.onload = () => {
-                    capturedW = img.naturalWidth;
-                    capturedH = img.naturalHeight;
-                    resolve();
-                  };
-                  img.onerror = () => resolve();
-                  img.src = b64;
-                });
-              }
-              setDefaultWidth(capturedW);
-              setDefaultHeight(capturedH);
-
-              const pending = uploadFileFromNative(
-                new File([file], file.name, { type: file.type }),
-                'loading',
-                0,
-              );
-              setDefaultImageFiles([pending]);
-              setIsUploadingDefault(true);
-              try {
-                const publicUrl = await uploadImageToS3(authentication, file);
-                setDefaultImage(publicUrl);
-                setDefaultImageFiles([uploadFileFromNative(
-                  new File([file], file.name, { type: file.type }),
-                  'completed',
-                )]);
-                emit({ defaultImage: publicUrl, defaultWidth: capturedW, defaultHeight: capturedH });
-              } catch (err) {
-                console.error('[ImageWidget] default image upload failed:', err);
-                setDefaultImageFiles([
-                  uploadFileFromNative(
-                    new File([file], file.name, { type: file.type }),
-                    'failed',
-                  ),
-                ]);
-              } finally {
-                setIsUploadingDefault(false);
-              }
+            onReupload={() => defaultFileInputRef.current?.click()}
+            onFilesSelect={(files: FileList) => {
+              if (!files || files.length === 0) return;
+              processDefaultImageFile(files[0]);
             }}
             onRemove={() => {
               setDefaultImage('');
@@ -572,6 +623,17 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               setDefaultWidth(0);
               setDefaultHeight(0);
               emit({ defaultImage: '', defaultWidth: 0, defaultHeight: 0 });
+            }}
+          />
+          <input
+            ref={defaultFileInputRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,.svg,.json,image/*,application/json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) processDefaultImageFile(f);
+              e.target.value = '';
             }}
           />
         </div>
@@ -633,30 +695,72 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
             <p className="iw-config__empty-hint">No events added yet.</p>
           ) : (
             <div className="iw-config__event-list">
-              {events.map((evt) => {
+              {events.map((evt, index) => {
                 const subtitle = evt.frameRangeEnabled
                   ? `Frame Range : ${evt.startFrame || 0}-${evt.endFrame || 0}`
                   : `${evt.topic || ''} ${evt.operator} ${evt.value}`.trim();
+                const isDragging = dragIndex === index;
+                const isDragOver = dragOverIndex === index && dragIndex !== index;
+                const rowClass = [
+                  'iw-config__event-row',
+                  isDragging ? 'iw-config__event-row--dragging' : '',
+                  isDragOver ? 'iw-config__event-row--drag-over' : '',
+                ].filter(Boolean).join(' ');
                 return (
-                  <ListCard
+                  <div
                     key={evt.id}
-                    title={evt.label}
-                    subtitle={subtitle}
-                    onClick={(e: React.MouseEvent) => openEditEventModal(evt, e)}
-                    trailingItems={
-                      <ListCardTrailingItem trailing="Slot">
-                        <IconButton
-                          icon={<X size={16} aria-hidden="true" />}
-                          size="Medium"
-                          accessibilityLabel={`Delete event ${evt.label}`}
-                          onClick={(e: React.MouseEvent) => {
-                            e.stopPropagation();
-                            deleteEvent(evt.id);
-                          }}
-                        />
-                      </ListCardTrailingItem>
-                    }
-                  />
+                    className={rowClass}
+                    draggable
+                    onDragStart={(e: React.DragEvent) => {
+                      setDragIndex(index);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e: React.DragEvent) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (dragOverIndex !== index) setDragOverIndex(index);
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverIndex === index) setDragOverIndex(null);
+                    }}
+                    onDrop={(e: React.DragEvent) => {
+                      e.preventDefault();
+                      if (dragIndex !== null) reorderEvents(dragIndex, index);
+                      setDragIndex(null);
+                      setDragOverIndex(null);
+                    }}
+                    onDragEnd={() => {
+                      setDragIndex(null);
+                      setDragOverIndex(null);
+                    }}
+                  >
+                    <span
+                      className="iw-config__event-grip"
+                      aria-hidden="true"
+                      title="Drag to reorder priority"
+                    >
+                      <MoreVertical size={14} />
+                      <MoreVertical size={14} />
+                    </span>
+                    <ListCard
+                      title={evt.label}
+                      subtitle={subtitle}
+                      onClick={(e: React.MouseEvent) => openEditEventModal(evt, e)}
+                      trailingItems={
+                        <ListCardTrailingItem trailing="Slot">
+                          <IconButton
+                            icon={<X size={16} aria-hidden="true" />}
+                            size="Medium"
+                            accessibilityLabel={`Delete event ${evt.label}`}
+                            onClick={(e: React.MouseEvent) => {
+                              e.stopPropagation();
+                              deleteEvent(evt.id);
+                            }}
+                          />
+                        </ListCardTrailingItem>
+                      }
+                    />
+                  </div>
                 );
               })}
             </div>
@@ -775,31 +879,10 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               isDisabled={isUploadingEventImage}
               disableBuiltInPreview
               onPreview={() => setEventPreviewOpen(true)}
-              onFilesSelect={async (files: FileList) => {
-                if (!files || files.length === 0 || !authentication) return;
-                const file = files[0];
-                setNewEventFiles([uploadFileFromNative(
-                  new File([file], file.name, { type: file.type }),
-                  'loading',
-                  0,
-                )]);
-                setIsUploadingEventImage(true);
-                try {
-                  const publicUrl = await uploadImageToS3(authentication, file);
-                  setNewEventImage(publicUrl);
-                  setNewEventFiles([uploadFileFromNative(
-                    new File([file], file.name, { type: file.type }),
-                    'completed',
-                  )]);
-                } catch (err) {
-                  console.error('[ImageWidget] event image upload failed:', err);
-                  setNewEventFiles([uploadFileFromNative(
-                    new File([file], file.name, { type: file.type }),
-                    'failed',
-                  )]);
-                } finally {
-                  setIsUploadingEventImage(false);
-                }
+              onReupload={() => eventFileInputRef.current?.click()}
+              onFilesSelect={(files: FileList) => {
+                if (!files || files.length === 0) return;
+                processEventImageFile(files[0]);
               }}
               onRemove={() => {
                 setNewEventImage('');
@@ -807,6 +890,17 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               }}
             />
             )}
+            <input
+              ref={eventFileInputRef}
+              type="file"
+              accept=".png,.jpg,.jpeg,.svg,.json,image/*,application/json"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) processEventImageFile(f);
+                e.target.value = '';
+              }}
+            />
 
             {/* 3. Alignment */}
             <div className="iw-config__form-group">
@@ -887,49 +981,51 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               onChange={({ value }: { value: string }) => setNewEventValue(value)}
             />
 
-            {/* 9. Frame Range toggle */}
-            <div className="iw-event-modal__toggle-row">
-              <span className="iw-event-modal__toggle-label">Frame Range</span>
-              <Switch
-                accessibilityLabel="Frame Range"
-                isChecked={newEventFrameRange}
-                onChange={({ isChecked }: { isChecked: boolean }) => setNewEventFrameRange(isChecked)}
-              />
-            </div>
+            {/* 9–11. Frame Range — only for Lottie (.json) assets */}
+            {isJsonAsset(newEventImage) && (
+              <>
+                <div className="iw-event-modal__toggle-row">
+                  <span className="iw-event-modal__toggle-label">Frame Range</span>
+                  <Switch
+                    accessibilityLabel="Frame Range"
+                    isChecked={newEventFrameRange}
+                    onChange={({ isChecked }: { isChecked: boolean }) => setNewEventFrameRange(isChecked)}
+                  />
+                </div>
 
-            {/* 10. Start / End Frame (conditional) */}
-            {newEventFrameRange && (
-              <div className="iw-event-modal__frame-row">
-                <TextInput
-                  label="Start Frame"
-                  size="Medium"
-                  type="number"
-                  min={0}
-                  placeholder="From"
-                  value={newEventStartFrame > 0 ? String(newEventStartFrame) : ''}
-                  onChange={({ value }: { value: string }) => setNewEventStartFrame(pos(value))}
-                />
-                <TextInput
-                  label="End Frame"
-                  size="Medium"
-                  type="number"
-                  min={0}
-                  placeholder="To"
-                  value={newEventEndFrame > 0 ? String(newEventEndFrame) : ''}
-                  onChange={({ value }: { value: string }) => setNewEventEndFrame(pos(value))}
-                />
-              </div>
-            )}
+                {newEventFrameRange && (
+                  <div className="iw-event-modal__frame-row">
+                    <TextInput
+                      label="Start Frame"
+                      size="Medium"
+                      type="number"
+                      min={0}
+                      placeholder="From"
+                      value={newEventStartFrame > 0 ? String(newEventStartFrame) : ''}
+                      onChange={({ value }: { value: string }) => setNewEventStartFrame(pos(value))}
+                    />
+                    <TextInput
+                      label="End Frame"
+                      size="Medium"
+                      type="number"
+                      min={0}
+                      placeholder="To"
+                      value={newEventEndFrame > 0 ? String(newEventEndFrame) : ''}
+                      onChange={({ value }: { value: string }) => setNewEventEndFrame(pos(value))}
+                    />
+                  </div>
+                )}
 
-            {/* 11. Overlap warning Alert (non-blocking) */}
-            {hasFrameOverlap && (
-              <Alert
-                color="Notice"
-                emphasis="Subtle"
-                isFullWidth
-                title="Overlapping Frame Range"
-                description="This frame range is already in use. Overlapping ranges may cause unpredictable behavior. Adjust the frame range to avoid conflicts."
-              />
+                {hasFrameOverlap && (
+                  <Alert
+                    color="Notice"
+                    emphasis="Subtle"
+                    isFullWidth
+                    title="Overlapping Frame Range"
+                    description="This frame range is already in use. Overlapping ranges may cause unpredictable behavior. Adjust the frame range to avoid conflicts."
+                  />
+                )}
+              </>
             )}
           </div>
         </ModalBody>
@@ -944,6 +1040,20 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
           <ModalHeader
             title={fileNameFromUrl(defaultImage) || 'Preview'}
             onClose={() => setDefaultPreviewOpen(false)}
+          />
+        }
+        footer={
+          <ModalFooter
+            primaryAction={
+              <Button
+                variant="Primary"
+                size="Medium"
+                label="Download"
+                leadingIcon={<Download size={16} />}
+                onClick={() => downloadAsset(defaultImage)}
+                isDisabled={!defaultImage}
+              />
+            }
           />
         }
       >
@@ -961,6 +1071,20 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
           <ModalHeader
             title={fileNameFromUrl(newEventImage) || 'Preview'}
             onClose={() => setEventPreviewOpen(false)}
+          />
+        }
+        footer={
+          <ModalFooter
+            primaryAction={
+              <Button
+                variant="Primary"
+                size="Medium"
+                label="Download"
+                leadingIcon={<Download size={16} />}
+                onClick={() => downloadAsset(newEventImage)}
+                isDisabled={!newEventImage}
+              />
+            }
           />
         }
       >

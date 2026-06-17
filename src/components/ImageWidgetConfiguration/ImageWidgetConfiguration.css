@@ -141,8 +141,40 @@
 .iw-config__event-row {
   display: flex;
   align-items: center;
-  gap: var(--spacing-03, 8px);
+  gap: var(--spacing-02, 4px);
   padding: var(--spacing-02, 4px) 0;
+  cursor: grab;
+  transition: opacity 120ms ease, border-color 120ms ease;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+}
+
+.iw-config__event-row:active {
+  cursor: grabbing;
+}
+
+.iw-config__event-row--dragging {
+  opacity: 0.4;
+}
+
+.iw-config__event-row--drag-over {
+  border-top-color: var(--border-accent-default, #4f46e5);
+}
+
+.iw-config__event-row > :nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.iw-config__event-grip {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-default-tertiary, #616d75);
+  flex-shrink: 0;
+}
+
+.iw-config__event-grip > :first-child {
+  margin-right: -10px;
 }
 
 .iw-config__event-thumb {
