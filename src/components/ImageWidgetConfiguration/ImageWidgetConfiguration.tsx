@@ -142,9 +142,12 @@ function fileNameFromUrl(url: string): string {
   }
 }
 
-function uploadFileFromUrl(url: string): UploadFile {
+function uploadFileFromUrl(url: string, sizeBytes?: number): UploadFile {
   const name = fileNameFromUrl(url);
   const file = new File([], name) as UploadFile;
+  if (typeof sizeBytes === 'number' && sizeBytes > 0) {
+    Object.defineProperty(file, 'size', { value: sizeBytes, configurable: true });
+  }
   file.state = 'completed';
   return file;
 }
@@ -201,8 +204,13 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   const [defaultImage, setDefaultImage] = useState<string>(
     config?.uiConfig?.defaultImage ?? '',
   );
+  const [defaultImageSize, setDefaultImageSize] = useState<number>(
+    config?.uiConfig?.defaultImageSize ?? 0,
+  );
   const [defaultImageFiles, setDefaultImageFiles] = useState<UploadFile[]>(
-    config?.uiConfig?.defaultImage ? [uploadFileFromUrl(config.uiConfig.defaultImage)] : [],
+    config?.uiConfig?.defaultImage
+      ? [uploadFileFromUrl(config.uiConfig.defaultImage, config.uiConfig.defaultImageSize)]
+      : [],
   );
   const [defaultWidth, setDefaultWidth] = useState<number>(
     config?.width ?? 0,
@@ -248,6 +256,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [newEventName, setNewEventName] = useState('');
   const [newEventImage, setNewEventImage] = useState('');
+  const [newEventImageSize, setNewEventImageSize] = useState<number>(0);
   const [newEventFiles, setNewEventFiles] = useState<UploadFile[]>([]);
   const [assetSource, setAssetSource] = useState<'Upload New' | 'Select Existing'>('Upload New');
   const [existingAssetId, setExistingAssetId] = useState<string>('');
@@ -280,8 +289,10 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   useEffect(() => {
     if (config) {
       const di = config.uiConfig?.defaultImage ?? '';
+      const ds = config.uiConfig?.defaultImageSize ?? 0;
       setDefaultImage(di);
-      setDefaultImageFiles(di ? [uploadFileFromUrl(di)] : []);
+      setDefaultImageSize(ds);
+      setDefaultImageFiles(di ? [uploadFileFromUrl(di, ds)] : []);
       const dw = config.width ?? 0;
       const dh = config.height ?? 0;
       setDefaultWidth(dw);
@@ -298,6 +309,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   // -------------------------------------------------------------------------
   function emit(overrides?: Partial<{
     defaultImage: string;
+    defaultImageSize: number;
     defaultWidth: number;
     defaultHeight: number;
     linkEnabled: boolean;
@@ -305,16 +317,18 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     events: ImageEventConfig[];
   }>) {
     const resolved = {
-      defaultImage:  overrides?.defaultImage  ?? defaultImage,
-      defaultWidth:  overrides?.defaultWidth  ?? defaultWidth,
-      defaultHeight: overrides?.defaultHeight ?? defaultHeight,
-      linkEnabled:   overrides?.linkEnabled   ?? linkEnabled,
-      linkUrl:       overrides?.linkUrl       ?? linkUrl,
-      events:        overrides?.events        ?? events,
+      defaultImage:     overrides?.defaultImage     ?? defaultImage,
+      defaultImageSize: overrides?.defaultImageSize ?? defaultImageSize,
+      defaultWidth:     overrides?.defaultWidth     ?? defaultWidth,
+      defaultHeight:    overrides?.defaultHeight    ?? defaultHeight,
+      linkEnabled:      overrides?.linkEnabled      ?? linkEnabled,
+      linkUrl:          overrides?.linkUrl          ?? linkUrl,
+      events:           overrides?.events           ?? events,
     };
 
     const uiConfig: ImageWidgetUIConfig = {
-      defaultImage:  resolved.defaultImage,
+      defaultImage:     resolved.defaultImage,
+      defaultImageSize: resolved.defaultImageSize,
       linkConfig: {
         enabled: resolved.linkEnabled,
         url: resolved.linkUrl,
@@ -368,6 +382,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     setEditingEventId(null);
     setNewEventName('');
     setNewEventImage('');
+    setNewEventImageSize(0);
     setNewEventFiles([]);
     setAssetSource('Upload New');
     setExistingAssetId('');
@@ -393,7 +408,8 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     setEditingEventId(evt.id);
     setNewEventName(evt.label);
     setNewEventImage(evt.image);
-    setNewEventFiles(evt.image ? [uploadFileFromUrl(evt.image)] : []);
+    setNewEventImageSize(evt.imageSize ?? 0);
+    setNewEventFiles(evt.image ? [uploadFileFromUrl(evt.image, evt.imageSize)] : []);
     setAssetSource('Upload New');
     setExistingAssetId('');
     setNewEventAlignment(evt.alignment);
@@ -421,6 +437,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               ...e,
               label: newEventName.trim(),
               image: newEventImage,
+              imageSize: newEventImageSize,
               alignment: newEventAlignment,
               width: 0,
               height: 0,
@@ -439,6 +456,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
         id: `evt_${Date.now()}`,
         label: newEventName.trim(),
         image: newEventImage,
+        imageSize: newEventImageSize,
         alignment: newEventAlignment,
         width: 0,
         height: 0,
@@ -493,8 +511,14 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     try {
       const publicUrl = await uploadImageToS3(authentication, file);
       setDefaultImage(publicUrl);
+      setDefaultImageSize(file.size);
       setDefaultImageFiles([uploadFileFromNative(file, 'completed')]);
-      emit({ defaultImage: publicUrl, defaultWidth: capturedW, defaultHeight: capturedH });
+      emit({
+        defaultImage: publicUrl,
+        defaultImageSize: file.size,
+        defaultWidth: capturedW,
+        defaultHeight: capturedH,
+      });
     } catch (err) {
       console.error('[ImageWidget] default image upload failed:', err);
       setDefaultImageFiles([uploadFileFromNative(file, 'failed')]);
@@ -510,6 +534,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     try {
       const publicUrl = await uploadImageToS3(authentication, file);
       setNewEventImage(publicUrl);
+      setNewEventImageSize(file.size);
       setNewEventFiles([uploadFileFromNative(file, 'completed')]);
     } catch (err) {
       console.error('[ImageWidget] event image upload failed:', err);
@@ -619,10 +644,11 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
             }}
             onRemove={() => {
               setDefaultImage('');
+              setDefaultImageSize(0);
               setDefaultImageFiles([]);
               setDefaultWidth(0);
               setDefaultHeight(0);
-              emit({ defaultImage: '', defaultWidth: 0, defaultHeight: 0 });
+              emit({ defaultImage: '', defaultImageSize: 0, defaultWidth: 0, defaultHeight: 0 });
             }}
           />
           <input
@@ -820,6 +846,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                       setAssetSource('Upload New');
                       setExistingAssetId('');
                       setNewEventImage('');
+                      setNewEventImageSize(0);
                     }}
                   />
                   <Radio
@@ -831,6 +858,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                       setAssetSource('Select Existing');
                       setNewEventFiles([]);
                       setNewEventImage('');
+                      setNewEventImageSize(0);
                     }}
                   />
                 </div>
@@ -857,6 +885,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                       onClick={() => {
                         setExistingAssetId(a.id);
                         setNewEventImage(a.image);
+                        setNewEventImageSize(a.imageSize ?? 0);
                         setNewEventWidth(a.width);
                         setNewEventHeight(a.height);
                         setAspectRatio(a.width > 0 && a.height > 0 ? a.width / a.height : null);
@@ -886,6 +915,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               }}
               onRemove={() => {
                 setNewEventImage('');
+                setNewEventImageSize(0);
                 setNewEventFiles([]);
               }}
             />

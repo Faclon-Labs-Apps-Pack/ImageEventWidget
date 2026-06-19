@@ -77,6 +77,7 @@ export interface ImageEventConfig {
   id: string;
   label: string;
   image: string;                                        // base64 data URL
+  imageSize?: number;                                   // bytes — persisted so the configurator can re-display size on reopen
   alignment:
     | 'Top Left' | 'Top Center' | 'Top Right'
     | 'Left' | 'Center' | 'Right'
@@ -92,7 +93,8 @@ export interface ImageEventConfig {
 }
 
 export interface ImageWidgetUIConfig {
-  defaultImage: string;    // base64 data URL — shown when no rule matches
+  defaultImage: string;        // base64 data URL — shown when no rule matches
+  defaultImageSize?: number;   // bytes — persisted so the configurator can re-display size on reopen
   linkConfig: {
     enabled: boolean;
     url: string;           // URL to navigate to when image is clicked

@@ -7,6 +7,10 @@
   overflow: hidden;
 }
 
+.fds-pa-item__body-inner {
+  padding: 0 !important;
+}
+
 .iw-config__header {
   display: flex;
   align-items: center;

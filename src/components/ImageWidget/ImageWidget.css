@@ -1,3 +1,7 @@
+.fds-pa-item__body-inner {
+  padding: 0 !important;
+}
+
 .iw-widget {
   width: 100%;
   height: 100%;
