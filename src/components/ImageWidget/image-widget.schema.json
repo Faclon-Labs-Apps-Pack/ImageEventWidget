@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iosense.faclon.com/schemas/image-widget.json",
+  "title": "ImageWidget Envelope",
+  "description": "Configuration envelope for the IOsense ImageWidget. Emitted by the configurator via onChange() and consumed by the mini-engine + widget renderer. A default image (static PNG/JPG/SVG or a Lottie JSON) is shown until an ordered list of events matches a bound UNS topic against a threshold; the first matching event's image replaces the default, anchored to its alignment.",
+  "type": "object",
+  "required": ["_id", "type", "general", "width", "height", "uiConfig", "dynamicBindingPathList"],
+  "additionalProperties": false,
+  "properties": {
+    "_id": {
+      "type": "string",
+      "description": "Unique widget instance id. Generated as `iw_<timestamp>` when absent."
+    },
+    "type": {
+      "const": "ImageWidget",
+      "description": "Widget type discriminator."
+    },
+    "general": {
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Human-readable widget title."
+        }
+      }
+    },
+    "timeConfig": {
+      "type": "object",
+      "description": "Optional dashboard-injected time context. Not authored by the ImageWidget configurator; present when the host supplies it.",
+      "required": ["timezone", "type", "startTime", "endTime", "defaultDurationId", "allDurations", "defaultPeriodicity"],
+      "additionalProperties": false,
+      "properties": {
+        "timezone": { "type": "string" },
+        "type": {
+          "type": "string",
+          "description": "'local', 'fixed', or a host-specific value.",
+          "examples": ["local", "fixed"]
+        },
+        "startTime": { "type": ["integer", "null"], "description": "Epoch ms, or null for rolling windows." },
+        "endTime": { "type": ["integer", "null"], "description": "Epoch ms, or null for rolling windows." },
+        "defaultDurationId": { "type": "string" },
+        "defaultPeriodicity": {
+          "type": "string",
+          "enum": ["minute", "hourly", "daily", "weekly", "monthly"]
+        },
+        "allDurations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "xPeriod"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "x": { "type": "number" },
+              "xPeriod": {
+                "type": "string",
+                "examples": ["minute", "hour", "day", "week", "month", "year"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "width": {
+      "type": "number",
+      "description": "Default rendered width of the widget image in px (0 = auto). Top-level, OUTSIDE uiConfig. Captured from the uploaded asset's natural width; drives the CSS aspect-ratio lock together with height.",
+      "minimum": 0,
+      "default": 580
+    },
+    "height": {
+      "type": "number",
+      "description": "Default rendered height of the widget image in px (0 = auto). Top-level, OUTSIDE uiConfig. Captured from the uploaded asset's natural height.",
+      "minimum": 0,
+      "default": 300
+    },
+    "uiConfig": {
+      "type": "object",
+      "description": "Render configuration for the image widget.",
+      "required": ["defaultImage", "linkConfig", "events", "style"],
+      "additionalProperties": false,
+      "properties": {
+        "defaultImage": {
+          "type": "string",
+          "description": "Public URL (or base64 data URL) of the default asset — PNG/JPG/SVG raster or a Lottie animation JSON. Shown when no event matches. Empty string means unconfigured (widget renders the 'Image not configured' empty state).",
+          "default": ""
+        },
+        "defaultImageSize": {
+          "type": "number",
+          "description": "Size of the default asset in bytes. Persisted so the configurator can re-display the file size on reopen.",
+          "minimum": 0
+        },
+        "linkConfig": {
+          "type": "object",
+          "description": "Click-through navigation for the rendered image. Redirection is suppressed in dashboard edit mode.",
+          "required": ["enabled", "url"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "When true and url is a valid http(s) URL, the image is wrapped in a link opening in a new tab.",
+              "default": false
+            },
+            "url": {
+              "type": "string",
+              "description": "Destination URL. Only http:// and https:// are honored at render time.",
+              "default": ""
+            }
+          }
+        },
+        "events": {
+          "type": "array",
+          "description": "Ordered list of conditional overlays. Evaluated top-to-bottom; the FIRST event whose bound topic satisfies its operator/value wins, and its image replaces the default anchored to `alignment`. Reorder = priority change.",
+          "items": { "$ref": "#/$defs/imageEvent" }
+        },
+        "style": {
+          "type": "object",
+          "required": ["card"],
+          "additionalProperties": false,
+          "properties": {
+            "card": {
+              "type": "object",
+              "required": ["wrapInCard", "bg"],
+              "additionalProperties": false,
+              "properties": {
+                "wrapInCard": {
+                  "type": "boolean",
+                  "description": "When true, the image is rendered inside a design-sdk Card wrapper.",
+                  "default": false
+                },
+                "bg": {
+                  "type": "string",
+                  "description": "Optional card background color/token. Empty string = default.",
+                  "default": ""
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "dynamicBindingPathList": {
+      "type": "array",
+      "description": "Bindings extracted from bindable uiConfig fields containing {{topic}}. Built by buildDynamicBindingPathList(uiConfig) before every onChange(). For the ImageWidget the only bindable field is each event's `topic`, so keys look like `events[<i>].topic`.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Scalar binding.",
+            "required": ["key", "topic"],
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "Dot/bracket path to the bound uiConfig field (e.g. \"events[0].topic\").",
+                "examples": ["events[0].topic"]
+              },
+              "topic": {
+                "type": "string",
+                "description": "UNS topic extracted from {{topic}}."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Series binding.",
+            "required": ["key", "topic", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "key": { "type": "string" },
+              "topic": { "type": "string" },
+              "type": { "const": "series" }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "imageEvent": {
+      "type": "object",
+      "description": "A single conditional overlay: when the bound topic value satisfies operator/value, this asset is shown instead of the default.",
+      "required": ["id", "label", "image", "alignment", "width", "height", "topic", "operator", "value", "frameRangeEnabled", "startFrame", "endFrame"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique event id, generated as `evt_<timestamp>`."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable event name shown in the configurator list."
+        },
+        "image": {
+          "type": "string",
+          "description": "Public URL (or base64 data URL) of the overlay asset — raster or Lottie JSON. When set, it fully replaces the default image (no base/overlay stacking)."
+        },
+        "imageSize": {
+          "type": "number",
+          "description": "Overlay asset size in bytes. Persisted so the configurator can re-display file size on reopen.",
+          "minimum": 0
+        },
+        "alignment": {
+          "type": "string",
+          "description": "Corner/edge the overlay asset is anchored to within the widget.",
+          "enum": [
+            "Top Left", "Top Center", "Top Right",
+            "Left", "Center", "Right",
+            "Bottom Left", "Bottom Center", "Bottom Right"
+          ],
+          "default": "Center"
+        },
+        "width": {
+          "type": "number",
+          "description": "Overlay width in px (0 = auto / natural size). Currently emitted as 0 by the configurator.",
+          "minimum": 0,
+          "default": 0
+        },
+        "height": {
+          "type": "number",
+          "description": "Overlay height in px (0 = auto / natural size). Currently emitted as 0 by the configurator.",
+          "minimum": 0,
+          "default": 0
+        },
+        "topic": {
+          "type": "string",
+          "description": "Bindable — the UNS topic whose resolved value is compared. Authored via UNSPathInput; stored raw as a {{topic}} binding or a resolved UNS value. Surfaces in dynamicBindingPathList as `events[<i>].topic`."
+        },
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator applied to (resolvedValue operator value). Numeric operators require both sides to parse as numbers; == also matches on string equality.",
+          "enum": ["==", "!=", ">", "<", ">=", "<="],
+          "default": "=="
+        },
+        "value": {
+          "type": "string",
+          "description": "Threshold the resolved topic value is compared against."
+        },
+        "frameRangeEnabled": {
+          "type": "boolean",
+          "description": "Lottie-only. When true, a matched event plays only the [startFrame, endFrame] segment. Forced false for non-JSON assets.",
+          "default": false
+        },
+        "startFrame": {
+          "type": "number",
+          "description": "Lottie start frame of the played segment (0 = unset).",
+          "minimum": 0,
+          "default": 0
+        },
+        "endFrame": {
+          "type": "number",
+          "description": "Lottie end frame of the played segment (0 = unset).",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "frameRangeEnabled": { "const": true } } },
+          "then": { "required": ["startFrame", "endFrame"] }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "_id": "iw_1720353600000",
+      "type": "ImageWidget",
+      "general": { "title": "Pump Status" },
+      "width": 580,
+      "height": 300,
+      "uiConfig": {
+        "defaultImage": "https://assets.iosense.io/widgets/pump-idle.png",
+        "defaultImageSize": 24576,
+        "linkConfig": {
+          "enabled": true,
+          "url": "https://app.iosense.io/line1/pump"
+        },
+        "events": [
+          {
+            "id": "evt_1720353610000",
+            "label": "Running",
+            "image": "https://assets.iosense.io/widgets/pump-running.json",
+            "imageSize": 81920,
+            "alignment": "Center",
+            "width": 0,
+            "height": 0,
+            "topic": "{{plantA/line1/pump/state}}",
+            "operator": "==",
+            "value": "1",
+            "frameRangeEnabled": true,
+            "startFrame": 0,
+            "endFrame": 60
+          },
+          {
+            "id": "evt_1720353620000",
+            "label": "Fault",
+            "image": "https://assets.iosense.io/widgets/pump-fault.png",
+            "imageSize": 18432,
+            "alignment": "Top Right",
+            "width": 0,
+            "height": 0,
+            "topic": "{{plantA/line1/pump/fault}}",
+            "operator": ">",
+            "value": "0",
+            "frameRangeEnabled": false,
+            "startFrame": 0,
+            "endFrame": 0
+          }
+        ],
+        "style": {
+          "card": { "wrapInCard": false, "bg": "" }
+        }
+      },
+      "dynamicBindingPathList": [
+        { "key": "events[0].topic", "topic": "plantA/line1/pump/state" },
+        { "key": "events[1].topic", "topic": "plantA/line1/pump/fault" }
+      ]
+    }
+  ]
+}

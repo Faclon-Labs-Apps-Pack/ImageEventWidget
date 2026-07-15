@@ -213,10 +213,10 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       : [],
   );
   const [defaultWidth, setDefaultWidth] = useState<number>(
-    config?.width ?? 0,
+    config?.width || 580,
   );
   const [defaultHeight, setDefaultHeight] = useState<number>(
-    config?.height ?? 0,
+    config?.height || 300,
   );
   const [defaultLockAspect, setDefaultLockAspect] = useState(true);
   const [defaultAspectRatio, setDefaultAspectRatio] = useState<number | null>(null);
@@ -293,8 +293,8 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       setDefaultImage(di);
       setDefaultImageSize(ds);
       setDefaultImageFiles(di ? [uploadFileFromUrl(di, ds)] : []);
-      const dw = config.width ?? 0;
-      const dh = config.height ?? 0;
+      const dw = config.width || 580;
+      const dh = config.height || 300;
       setDefaultWidth(dw);
       setDefaultHeight(dh);
       setDefaultAspectRatio(dw > 0 && dh > 0 ? dw / dh : null);
@@ -303,6 +303,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       setEvents(config.uiConfig?.events ?? []);
     }
   }, [config?._id]);
+
 
   // -------------------------------------------------------------------------
   // Emit helpers
@@ -503,8 +504,8 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
         img.src = b64;
       });
     }
-    setDefaultWidth(capturedW);
-    setDefaultHeight(capturedH);
+    if (capturedW > 0) setDefaultWidth(capturedW);
+    if (capturedH > 0) setDefaultHeight(capturedH);
 
     setDefaultImageFiles([uploadFileFromNative(file, 'loading', 0)]);
     setIsUploadingDefault(true);
@@ -516,8 +517,8 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       emit({
         defaultImage: publicUrl,
         defaultImageSize: file.size,
-        defaultWidth: capturedW,
-        defaultHeight: capturedH,
+        ...(capturedW > 0 ? { defaultWidth: capturedW } : {}),
+        ...(capturedH > 0 ? { defaultHeight: capturedH } : {}),
       });
     } catch (err) {
       console.error('[ImageWidget] default image upload failed:', err);
@@ -646,9 +647,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               setDefaultImage('');
               setDefaultImageSize(0);
               setDefaultImageFiles([]);
-              setDefaultWidth(0);
-              setDefaultHeight(0);
-              emit({ defaultImage: '', defaultImageSize: 0, defaultWidth: 0, defaultHeight: 0 });
+              emit({ defaultImage: '', defaultImageSize: 0 });
             }}
           />
           <input
@@ -698,7 +697,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       {/* Event Configuration accordion */}
       <div className="iw-config__accordion-section" ref={eventsAccordionRef}>
         <ProductAccordionItem
-          title="Event Configuration"
+          title={events.length > 0 ? `Event Configuration (${events.length})` : 'Event Configuration'}
           isDisabled={!hasImage}
           isActive={hasEvents}
           isExpanded={hasEvents && eventsExpanded}
@@ -724,7 +723,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               {events.map((evt, index) => {
                 const subtitle = evt.frameRangeEnabled
                   ? `Frame Range : ${evt.startFrame || 0}-${evt.endFrame || 0}`
-                  : `${evt.topic || ''} ${evt.operator} ${evt.value}`.trim();
+                  : `${evt.operator} ${evt.value}`.trim();
                 const isDragging = dragIndex === index;
                 const isDragOver = dragOverIndex === index && dragIndex !== index;
                 const rowClass = [

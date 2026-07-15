@@ -3,6 +3,7 @@
 }
 
 .iw-widget {
+  position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -23,10 +24,36 @@
   height: 100%;
 }
 
+/* Overlay variants render at the image's natural intrinsic size, not stretched. */
+.iw-widget__image--overlay,
+.iw-widget__lottie--overlay {
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  display: block;
+}
+
 .iw-widget__lottie {
   max-width: 100%;
   max-height: 100%;
 }
+
+/* Event overlay container — positioned absolute, anchored to one of 9 alignment corners. */
+.iw-widget__overlay {
+  position: absolute;
+  pointer-events: none;
+}
+
+.iw-widget__overlay--top-left     { top: 0;    left: 0; }
+.iw-widget__overlay--top-center   { top: 0;    left: 50%; transform: translateX(-50%); }
+.iw-widget__overlay--top-right    { top: 0;    right: 0; }
+.iw-widget__overlay--middle-left  { top: 50%;  left: 0;  transform: translateY(-50%); }
+.iw-widget__overlay--middle-center{ top: 50%;  left: 50%; transform: translate(-50%, -50%); }
+.iw-widget__overlay--middle-right { top: 50%;  right: 0; transform: translateY(-50%); }
+.iw-widget__overlay--bottom-left  { bottom: 0; left: 0; }
+.iw-widget__overlay--bottom-center{ bottom: 0; left: 50%; transform: translateX(-50%); }
+.iw-widget__overlay--bottom-right { bottom: 0; right: 0; }
 
 .iw-widget__file-tile {
   display: flex;
@@ -42,12 +69,17 @@
 }
 
 .iw-widget__link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  max-width: 100%;
-  max-height: 100%;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+  justify-content: stretch;
   line-height: 0;
+}
+
+.iw-widget__link > * {
+  width: 100%;
+  height: 100%;
 }
 
 .iw-widget--loading {
@@ -68,18 +100,23 @@
 }
 
 .iw-widget__empty {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-05, 16px);
-  background: var(--background-default-subtle, #f5f5f5);
+  box-sizing: border-box;
 }
 
 .iw-widget__empty-card {
   width: 100%;
-  max-width: 420px;
+  height: 100%;
   padding: var(--spacing-08, 32px) var(--spacing-07, 24px);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }

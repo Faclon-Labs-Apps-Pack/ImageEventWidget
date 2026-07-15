@@ -2,7 +2,6 @@ import { FileText } from 'react-feather';
 import Lottie from 'lottie-react';
 import { EmptyState } from '@faclon-labs/design-sdk/EmptyState';
 import { NoDataOneIllustration } from '@faclon-labs/design-sdk/EmptyState/illustrations/NoDataOneIllustration';
-import { Button } from '@faclon-labs/design-sdk/Button';
 import { Card } from '@faclon-labs/design-sdk/Card';
 import { DataEntry, WidgetEvent, ImageWidgetUIConfig, ImageEventConfig } from '../../iosense-sdk/types';
 import { isJsonAsset, useLottieAnimation } from '../../iosense-sdk/lottie';
@@ -15,6 +14,10 @@ interface ImageWidgetProps {
   /** Default rendered image size (px, 0 = auto). Top-level envelope keys, outside uiConfig. */
   width?: number;
   height?: number;
+  /** When true, the widget is being rendered inside the dashboard editor.
+   *  Link redirection is disabled so clicks don't navigate the user away
+   *  while they're arranging widgets. */
+  editMode?: boolean;
   /** Called when "Configure Widget" is clicked in the no-config empty state. Host should open the file picker / configurator. */
   onConfigureClick?: () => void;
 }
@@ -69,42 +72,47 @@ function evaluateCondition(
 
 function NoConfigScreen({
   wrapInCard,
-  onConfigureClick,
+  aspectStyle,
 }: {
   wrapInCard: boolean;
+  aspectStyle?: React.CSSProperties;
   onConfigureClick?: () => void;
 }) {
   return (
-    <div className={`iw-widget iw-widget__empty${wrapInCard ? '' : ' iw-widget--no-wrap'}`}>
+    <div
+      className={`iw-widget iw-widget__empty${wrapInCard ? '' : ' iw-widget--no-wrap'}`}
+      style={aspectStyle}
+    >
       <Card elevation="LowRaised" className="iw-widget__empty-card">
         <EmptyState
           size="Medium"
           illustration={<NoDataOneIllustration />}
-          title="Set Your Default Image"
-          description="Add a default image and configure events."
-          primaryAction={
-            <Button
-              variant="Primary"
-              label="Configure Widget"
-              onClick={() => onConfigureClick?.()}
-            />
-          }
+          title="Image not configured"
+          description="Double click or drag and drop Image widget to configure an image"
         />
       </Card>
     </div>
   );
 }
 
-export function ImageWidget({ config, data, onEvent: _onEvent, onConfigureClick }: ImageWidgetProps) {
-  if (!config) return <NoConfigScreen wrapInCard onConfigureClick={onConfigureClick} />;
+export function ImageWidget({ config, data, onEvent: _onEvent, width, height, editMode, onConfigureClick }: ImageWidgetProps) {
+  // Aspect-ratio lock based on the uploaded image's natural dimensions (stored
+  // in the envelope's top-level width/height). When both are set we apply
+  // CSS aspect-ratio so the widget keeps its proportions on resize.
+  const aspectStyle: React.CSSProperties =
+    width && height && width > 0 && height > 0
+      ? { aspectRatio: `${width} / ${height}` }
+      : {};
+
+  if (!config) return <NoConfigScreen wrapInCard aspectStyle={aspectStyle} onConfigureClick={onConfigureClick} />;
 
   const wrapInCard = config.style?.card?.wrapInCard ?? true;
   const widgetClass = `iw-widget${wrapInCard ? '' : ' iw-widget--no-wrap'}`;
 
   const events = config.events ?? [];
 
-  // Evaluate events in order — find first matching
-  let activeImage = config.defaultImage;
+  // Evaluate events in order — find first matching event that contributes an overlay image
+  let activeEvent: ImageEventConfig | null = null;
   let activeFrameSegment: [number, number] | undefined;
 
   for (let i = 0; i < events.length; i++) {
@@ -113,7 +121,7 @@ export function ImageWidget({ config, data, onEvent: _onEvent, onConfigureClick 
       ? evaluateCondition(evt.operator, evt.value, getValue(`events[${i}].topic`, config, data))
       : !!evt.image;
     if (matches) {
-      activeImage = evt.image || config.defaultImage;
+      activeEvent = evt;
       if (evt.frameRangeEnabled && (evt.startFrame || evt.endFrame)) {
         activeFrameSegment = [evt.startFrame ?? 0, evt.endFrame ?? 0];
       }
@@ -121,44 +129,76 @@ export function ImageWidget({ config, data, onEvent: _onEvent, onConfigureClick 
     }
   }
 
+  // When an event matches AND has its own image, that image REPLACES the default
+  // (no base/overlay stacking). When the event has its own image, render it at
+  // natural size anchored to the alignment corner; otherwise render the active
+  // image (default or event's fallback to default) filling the container.
+  const useAlignment = !!activeEvent?.image;
+  const activeImage = activeEvent?.image || config.defaultImage;
+
   if (!activeImage) {
-    return <NoConfigScreen wrapInCard={wrapInCard} onConfigureClick={onConfigureClick} />;
+    return <NoConfigScreen wrapInCard={wrapInCard} aspectStyle={aspectStyle} onConfigureClick={onConfigureClick} />;
   }
 
+  // In edit mode, suppress link redirection so dashboard editors can click the
+  // widget without being navigated away. The linkConfig is preserved in the
+  // envelope; only the runtime <a> wrap is skipped.
   const linkUrl =
-    config.linkConfig?.enabled && isValidLinkUrl(config.linkConfig.url)
+    !editMode && config.linkConfig?.enabled && isValidLinkUrl(config.linkConfig.url)
       ? config.linkConfig.url.trim()
       : null;
 
+  const overlayClass = useAlignment
+    ? `iw-widget__overlay iw-widget__overlay--${alignmentToClass(activeEvent!.alignment)}`
+    : '';
+
+  const content = useAlignment ? (
+    <div className={overlayClass}>
+      <ActiveAsset src={activeImage} style={{}} frameSegment={activeFrameSegment} isOverlay />
+    </div>
+  ) : (
+    <ActiveAsset src={activeImage} style={{}} frameSegment={activeFrameSegment} />
+  );
+
   return (
-    <div className={widgetClass}>
+    <div className={widgetClass} style={aspectStyle}>
       {linkUrl ? (
         <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="iw-widget__link">
-          <ActiveAsset src={activeImage} style={{}} frameSegment={activeFrameSegment} />
+          {content}
         </a>
       ) : (
-        <ActiveAsset src={activeImage} style={{}} frameSegment={activeFrameSegment} />
+        content
       )}
     </div>
   );
+}
+
+function alignmentToClass(a: ImageEventConfig['alignment']): string {
+  const v = a.startsWith('Top') ? 'top' : a.startsWith('Bottom') ? 'bottom' : 'middle';
+  const h = a.endsWith('Left') ? 'left' : a.endsWith('Right') ? 'right' : 'center';
+  return `${v}-${h}`;
 }
 
 function ActiveAsset({
   src,
   style,
   frameSegment,
+  isOverlay = false,
 }: {
   src: string;
   style: React.CSSProperties;
   frameSegment?: [number, number];
+  isOverlay?: boolean;
 }) {
   const lottie = useLottieAnimation(isJsonAsset(src) ? src : undefined);
+  const imgClass = isOverlay ? 'iw-widget__image iw-widget__image--overlay' : 'iw-widget__image';
+  const lottieClass = isOverlay ? 'iw-widget__lottie iw-widget__lottie--overlay' : 'iw-widget__lottie';
 
   if (isJsonAsset(src)) {
     if (lottie.status === 'ready') {
       return (
         <Lottie
-          className="iw-widget__lottie"
+          className={lottieClass}
           style={style}
           animationData={lottie.data}
           loop
@@ -178,5 +218,5 @@ function ActiveAsset({
     );
   }
 
-  return <img className="iw-widget__image" src={src} alt="widget" style={style} />;
+  return <img className={imgClass} src={src} alt="widget" style={style} />;
 }
