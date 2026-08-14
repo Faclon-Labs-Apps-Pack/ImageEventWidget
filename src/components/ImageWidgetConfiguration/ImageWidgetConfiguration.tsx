@@ -18,11 +18,11 @@ import { Divider } from '@faclon-labs/design-sdk/Divider';
 import { ProductAccordionItem } from '@faclon-labs/design-sdk/ProductAccordion';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from '@faclon-labs/design-sdk/Modal';
 import { Button } from '@faclon-labs/design-sdk/Button';
-import { UNSPathInput } from '@faclon-labs/design-sdk/UNSPathInput';
+import { UNSTreePicker } from '@faclon-labs/design-sdk/UNSTreePicker';
+import type { UNSNode, UNSWorkspace } from '@faclon-labs/design-sdk/UNSTreePicker';
 import { DropdownMenu } from '@faclon-labs/design-sdk/DropdownMenu';
 import { ActionListItem } from '@faclon-labs/design-sdk/ActionListItem';
-import { useUNSTree } from '../../iosense-sdk/useUNSTree';
-import type { UNSTree } from '../../iosense-sdk/useUNSTree';
+import { useUNSTreePicker } from '../../iosense-sdk/useUNSTreePicker';
 import { uploadImageToS3 } from '../../iosense-sdk/api';
 import { isJsonAsset, useLottieAnimation } from '../../iosense-sdk/lottie';
 import Lottie, { type LottieRefCurrentProps } from 'lottie-react';
@@ -30,6 +30,7 @@ import {
   ImageWidgetEnvelope,
   ImageWidgetUIConfig,
   ImageEventConfig,
+  ImageObjectFit,
 } from '../../iosense-sdk/types';
 import './ImageWidgetConfiguration.css';
 
@@ -39,11 +40,12 @@ interface ImageWidgetConfigurationProps {
   onChange: (config: ImageWidgetEnvelope) => void;
   /** Optional back-button handler. When absent, the back IconButton is a no-op. */
   onBack?: () => void;
-  // Angular injection surface — pass all three functional props or none.
-  unsTree?: UNSTree;
-  isLoadingTree?: boolean;
-  onLoadWorkspaces?: () => void;
-  resolveUNSValue?: (rawValue: string) => string;
+  // Host-injectable UNS picker source (all-or-none). When absent, the dev-harness
+  // fallback (useUNSTreePicker) fetches via the widget's own token-backed API.
+  unsWorkspaces?: UNSWorkspace[];
+  isLoadingWorkspaces?: boolean;
+  loadUnsChildren?: (wsId: string, parentId?: string) => Promise<UNSNode[]>;
+  searchUnsNodes?: (wsId: string, query: string, limit?: number) => Promise<UNSNode[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,8 +128,12 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-const OPERATOR_OPTIONS = ['==', '!=', '>', '<', '>=', '<='] as const;
+const OPERATOR_OPTIONS = ['==', '!=', '>', '<', '>=', '<=', 'within range', 'outside range'] as const;
 type Operator = typeof OPERATOR_OPTIONS[number];
+const RANGE_OPERATORS: readonly Operator[] = ['within range', 'outside range'];
+function isRangeOperator(op: Operator): boolean {
+  return RANGE_OPERATORS.includes(op);
+}
 function pos(v: string): number {
   return Math.max(0, Number(v) || 0);
 }
@@ -159,21 +165,40 @@ function uploadFileFromNative(native: File, state: UploadFile['state'], progress
   return f;
 }
 
+/**
+ * Download an asset from S3.
+ *
+ * Strategy: try to fetch the URL as a blob and trigger a client-side download.
+ * If CORS blocks the fetch (opaque response, empty blob) or any step fails,
+ * fall back to opening the URL in a new tab so the user can save it manually
+ * via right-click. Better than silently producing a 0-byte file.
+ */
 async function downloadAsset(url: string): Promise<void> {
   if (!url) return;
+  const filename = fileNameFromUrl(url);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
+    if (blob.size === 0) throw new Error('empty blob (likely CORS-blocked)');
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = objectUrl;
-    a.download = fileNameFromUrl(url);
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(objectUrl);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
   } catch (err) {
-    console.error('[ImageWidget] download failed:', err);
+    console.warn('[ImageWidget] direct download failed, opening in new tab:', err);
+    // Fallback: navigate to the URL in a new tab. Browser will either display
+    // the image (user right-clicks Save Image As) or trigger a download if
+    // the server sends Content-Disposition: attachment.
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      // Popup was blocked — last-resort inline navigation
+      window.location.href = url;
+    }
   }
 }
 
@@ -185,18 +210,18 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   const { config, authentication, onChange, onBack } = props;
 
   // -------------------------------------------------------------------------
-  // UNS injection detection (follows CLAUDE.md UNS Injection Pattern exactly)
+  // UNSTreePicker source: host injects workspaces + loadChildren together;
+  // when absent, fall back to the dev-harness hook. The hook is always called
+  // (Rules of Hooks) but no-ops when injection is present.
   // -------------------------------------------------------------------------
   const hasInjectedUNS =
-    props.unsTree !== undefined &&
-    props.onLoadWorkspaces !== undefined &&
-    props.resolveUNSValue !== undefined;
+    props.unsWorkspaces !== undefined && props.loadUnsChildren !== undefined;
 
-  const hookResult = useUNSTree(hasInjectedUNS ? undefined : authentication);
-  const unsTree         = hasInjectedUNS ? props.unsTree!              : hookResult.unsTree;
-  const isLoadingTree   = hasInjectedUNS ? (props.isLoadingTree ?? false) : hookResult.isLoadingTree;
-  const loadWorkspaces  = hasInjectedUNS ? props.onLoadWorkspaces!     : hookResult.loadWorkspaces;
-  const resolveUNSValue = hasInjectedUNS ? props.resolveUNSValue!      : hookResult.resolveUNSValue;
+  const hookResult = useUNSTreePicker(hasInjectedUNS ? undefined : authentication);
+  const unsWorkspaces       = hasInjectedUNS ? props.unsWorkspaces!             : hookResult.workspaces;
+  const isLoadingWorkspaces = hasInjectedUNS ? (props.isLoadingWorkspaces ?? false) : hookResult.isLoadingWorkspaces;
+  const loadUnsChildren     = hasInjectedUNS ? props.loadUnsChildren!           : hookResult.loadChildren;
+  const searchUnsNodes      = hasInjectedUNS ? (props.searchUnsNodes ?? hookResult.searchNodes) : hookResult.searchNodes;
 
   // -------------------------------------------------------------------------
   // State
@@ -226,9 +251,16 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   const [linkUrl, setLinkUrl] = useState<string>(
     config?.uiConfig?.linkConfig?.url ?? '',
   );
+  const [linkNewTab, setLinkNewTab] = useState<boolean>(
+    config?.uiConfig?.linkConfig?.newTab ?? false,
+  );
   const [events, setEvents] = useState<ImageEventConfig[]>(
     config?.uiConfig?.events ?? [],
   );
+  const [objectFit, setObjectFit] = useState<ImageObjectFit>(
+    config?.uiConfig?.style?.objectFit ?? 'fill',
+  );
+  const [objectFitOpen, setObjectFitOpen] = useState(false);
 
   // Accordion expand state
   const [eventsExpanded, setEventsExpanded] = useState(false);
@@ -267,8 +299,9 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   const [newEventHeight, setNewEventHeight] = useState<number>(0);
   const [lockAspectRatio, setLockAspectRatio] = useState(false);
   const [newEventTopic, setNewEventTopic] = useState('');
-  const [newEventOperator, setNewEventOperator] = useState<'==' | '!=' | '>' | '<' | '>=' | '<='>('==');
+  const [newEventOperator, setNewEventOperator] = useState<Operator>('==');
   const [newEventOperatorOpen, setNewEventOperatorOpen] = useState(false);
+  const [newEventValue2, setNewEventValue2] = useState('');
   const [newEventValue, setNewEventValue] = useState('');
   const [newEventFrameRange, setNewEventFrameRange] = useState(false);
   const [newEventStartFrame, setNewEventStartFrame] = useState<number>(0);
@@ -300,7 +333,9 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       setDefaultAspectRatio(dw > 0 && dh > 0 ? dw / dh : null);
       setLinkEnabled(config.uiConfig?.linkConfig?.enabled ?? false);
       setLinkUrl(config.uiConfig?.linkConfig?.url ?? '');
+      setLinkNewTab(config.uiConfig?.linkConfig?.newTab ?? false);
       setEvents(config.uiConfig?.events ?? []);
+      setObjectFit(config.uiConfig?.style?.objectFit ?? 'fill');
     }
   }, [config?._id]);
 
@@ -308,6 +343,35 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   // -------------------------------------------------------------------------
   // Emit helpers
   // -------------------------------------------------------------------------
+  // Latest-state ref, mirrored after every render. `emit()` reads from this
+  // instead of closure so that async callbacks (e.g. S3 upload completion)
+  // don't overwrite fields the user changed while the upload was in flight.
+  // -------------------------------------------------------------------------
+  const latestStateRef = useRef({
+    defaultImage,
+    defaultImageSize,
+    defaultWidth,
+    defaultHeight,
+    linkEnabled,
+    linkUrl,
+    linkNewTab,
+    events,
+    objectFit,
+  });
+  useEffect(() => {
+    latestStateRef.current = {
+      defaultImage,
+      defaultImageSize,
+      defaultWidth,
+      defaultHeight,
+      linkEnabled,
+      linkUrl,
+      linkNewTab,
+      events,
+      objectFit,
+    };
+  });
+
   function emit(overrides?: Partial<{
     defaultImage: string;
     defaultImageSize: number;
@@ -315,16 +379,21 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     defaultHeight: number;
     linkEnabled: boolean;
     linkUrl: string;
+    linkNewTab: boolean;
     events: ImageEventConfig[];
+    objectFit: ImageObjectFit;
   }>) {
+    const s = latestStateRef.current;
     const resolved = {
-      defaultImage:     overrides?.defaultImage     ?? defaultImage,
-      defaultImageSize: overrides?.defaultImageSize ?? defaultImageSize,
-      defaultWidth:     overrides?.defaultWidth     ?? defaultWidth,
-      defaultHeight:    overrides?.defaultHeight    ?? defaultHeight,
-      linkEnabled:      overrides?.linkEnabled      ?? linkEnabled,
-      linkUrl:          overrides?.linkUrl          ?? linkUrl,
-      events:           overrides?.events           ?? events,
+      defaultImage:     overrides?.defaultImage     ?? s.defaultImage,
+      defaultImageSize: overrides?.defaultImageSize ?? s.defaultImageSize,
+      defaultWidth:     overrides?.defaultWidth     ?? s.defaultWidth,
+      defaultHeight:    overrides?.defaultHeight    ?? s.defaultHeight,
+      linkEnabled:      overrides?.linkEnabled      ?? s.linkEnabled,
+      linkUrl:          overrides?.linkUrl          ?? s.linkUrl,
+      linkNewTab:       overrides?.linkNewTab       ?? s.linkNewTab,
+      events:           overrides?.events           ?? s.events,
+      objectFit:        overrides?.objectFit        ?? s.objectFit,
     };
 
     const uiConfig: ImageWidgetUIConfig = {
@@ -333,6 +402,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       linkConfig: {
         enabled: resolved.linkEnabled,
         url: resolved.linkUrl,
+        newTab: resolved.linkNewTab,
       },
       events: resolved.events,
       style: {
@@ -340,6 +410,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
           wrapInCard: config?.uiConfig?.style?.card?.wrapInCard ?? false,
           bg: config?.uiConfig?.style?.card?.bg ?? '',
         },
+        objectFit: resolved.objectFit,
       },
     };
 
@@ -398,6 +469,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     setNewEventOperator('==');
     setNewEventOperatorOpen(false);
     setNewEventValue('');
+    setNewEventValue2('');
     setNewEventFrameRange(false);
     setNewEventStartFrame(0);
     setNewEventEndFrame(0);
@@ -421,6 +493,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     setNewEventTopic(evt.topic);
     setNewEventOperator(evt.operator);
     setNewEventValue(evt.value);
+    setNewEventValue2(evt.value2 ?? '');
     setNewEventFrameRange(evt.frameRangeEnabled ?? false);
     setNewEventStartFrame(evt.startFrame ?? 0);
     setNewEventEndFrame(evt.endFrame ?? 0);
@@ -430,6 +503,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   function handleSubmitEvent() {
     if (!canSubmit) return;
     let updated: ImageEventConfig[];
+    const isRange = isRangeOperator(newEventOperator);
     if (editingEventId) {
       const isLottie = isJsonAsset(newEventImage);
       updated = events.map((e) =>
@@ -445,6 +519,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               topic: newEventTopic,
               operator: newEventOperator,
               value: newEventValue,
+              value2: isRange ? newEventValue2 : undefined,
               frameRangeEnabled: isLottie ? newEventFrameRange : false,
               startFrame: isLottie ? newEventStartFrame : 0,
               endFrame: isLottie ? newEventEndFrame : 0,
@@ -464,6 +539,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
         topic: newEventTopic,
         operator: newEventOperator,
         value: newEventValue,
+        value2: isRange ? newEventValue2 : undefined,
         frameRangeEnabled: isLottie ? newEventFrameRange : false,
         startFrame: isLottie ? newEventStartFrame : 0,
         endFrame: isLottie ? newEventEndFrame : 0,
@@ -590,6 +666,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     newEventName.trim().length > 0 &&
     newEventTopic.trim().length > 0 &&
     newEventValue.trim().length > 0 &&
+    (!isRangeOperator(newEventOperator) || newEventValue2.trim().length > 0) &&
     newEventImage.length > 0;
 
   // Frame-range overlap detection — non-blocking warning.
@@ -678,6 +755,36 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
           />
         </div>
 
+        {hasImage && (
+          <div className="iw-config__form-group">
+            <InputFieldHeader label="Image Fit" />
+            <SelectInput
+              label=""
+              value={objectFit.charAt(0).toUpperCase() + objectFit.slice(1)}
+              helpText="Fill stretches to fill (may distort). Cover fills without distortion (may crop). Contain fits inside (may show empty space)."
+              onClick={() => setObjectFitOpen((v) => !v)}
+              isOpen={objectFitOpen}
+            >
+              <DropdownMenu>
+                {(['fill', 'cover', 'contain'] as const).map((opt) => (
+                  <ActionListItem
+                    key={opt}
+                    contentType="Item"
+                    selectionType="Single"
+                    title={opt.charAt(0).toUpperCase() + opt.slice(1)}
+                    isSelected={objectFit === opt}
+                    onClick={() => {
+                      setObjectFit(opt);
+                      setObjectFitOpen(false);
+                      emit({ objectFit: opt });
+                    }}
+                  />
+                ))}
+              </DropdownMenu>
+            </SelectInput>
+          </div>
+        )}
+
         {hasImage && linkEnabled && (
           <TextInput
             label="URL"
@@ -689,6 +796,20 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               emit({ linkUrl: value });
             }}
           />
+        )}
+
+        {hasImage && linkEnabled && (
+          <div className="iw-config__switch-row">
+            <InputFieldHeader label="Open in new tab" />
+            <Switch
+              accessibilityLabel="Open in new tab"
+              isChecked={linkNewTab}
+              onChange={({ isChecked }: { isChecked: boolean }) => {
+                setLinkNewTab(isChecked);
+                emit({ linkNewTab: isChecked });
+              }}
+            />
+          </div>
         )}
       </div>
 
@@ -721,9 +842,12 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
           ) : (
             <div className="iw-config__event-list">
               {events.map((evt, index) => {
+                const isEvtRange = evt.operator === 'within range' || evt.operator === 'outside range';
                 const subtitle = evt.frameRangeEnabled
                   ? `Frame Range : ${evt.startFrame || 0}-${evt.endFrame || 0}`
-                  : `${evt.operator} ${evt.value}`.trim();
+                  : isEvtRange
+                    ? `${evt.operator} ${evt.value} – ${evt.value2 ?? ''}`.trim()
+                    : `${evt.operator} ${evt.value}`.trim();
                 const isDragging = dragIndex === index;
                 const isDragOver = dragOverIndex === index && dragIndex !== index;
                 const rowClass = [
@@ -960,17 +1084,15 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
             {/* 5. UNS Path */}
             <div className="iw-config__form-group">
               <InputFieldHeader label="UNS Path" size="Medium" necessityIndicator="required" />
-              <UNSPathInput
+              <UNSTreePicker
                 label=""
-                placeholder="Type / to browse UNS or paste {{topic}} directly"
+                placeholder="Enter UNS Path"
                 value={newEventTopic}
-                tree={unsTree}
-                isLoading={isLoadingTree}
-                onChange={(v: string) => {
-                  const r = resolveUNSValue(v);
-                  setNewEventTopic(r);
-                }}
-                onOpen={() => loadWorkspaces()}
+                workspaces={unsWorkspaces}
+                isLoadingWorkspaces={isLoadingWorkspaces}
+                loadChildren={loadUnsChildren}
+                searchNodes={searchUnsNodes}
+                onChange={(value: string) => setNewEventTopic(value)}
               />
             </div>
 
@@ -987,28 +1109,57 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                 isOpen={newEventOperatorOpen}
               >
                 <DropdownMenu>
-                  {(['==', '!=', '>', '<', '>=', '<='] as const).map((op) => (
+                  {OPERATOR_OPTIONS.map((op) => (
                     <ActionListItem
                       key={op}
                       title={op}
                       isSelected={newEventOperator === op}
-                      onClick={() => { setNewEventOperator(op); setNewEventOperatorOpen(false); }}
+                      onClick={() => {
+                        setNewEventOperator(op);
+                        setNewEventOperatorOpen(false);
+                        // Clear the high bound when switching away from a range operator
+                        if (!isRangeOperator(op)) setNewEventValue2('');
+                      }}
                     />
                   ))}
                 </DropdownMenu>
               </SelectInput>
             </div>
 
-            {/* 8. Value */}
+            {/* 8. Value(s) — text so users can enter strings like "N/A" or numeric thresholds.
+                Range operators show two inputs (low bound + high bound). */}
+            {isRangeOperator(newEventOperator) ? (
+              <div className="iw-event-modal__frame-row">
+                <TextInput
+                  label="Min Value"
+                  necessityIndicator="required"
+                  size="Medium"
+                  type="text"
+                  placeholder="Low bound"
+                  value={newEventValue}
+                  onChange={({ value }: { value: string }) => setNewEventValue(value)}
+                />
+                <TextInput
+                  label="Max Value"
+                  necessityIndicator="required"
+                  size="Medium"
+                  type="text"
+                  placeholder="High bound"
+                  value={newEventValue2}
+                  onChange={({ value }: { value: string }) => setNewEventValue2(value)}
+                />
+              </div>
+            ) : (
             <TextInput
               label="Value"
               necessityIndicator="required"
               size="Medium"
-              type="number"
-              placeholder="Enter threshold value"
+              type="text"
+              placeholder="e.g. 50 or N/A"
               value={newEventValue}
               onChange={({ value }: { value: string }) => setNewEventValue(value)}
             />
+            )}
 
             {/* 9–11. Frame Range — only for Lottie (.json) assets */}
             {isJsonAsset(newEventImage) && (

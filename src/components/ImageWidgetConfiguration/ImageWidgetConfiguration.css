@@ -7,10 +7,6 @@
   overflow: hidden;
 }
 
-.fds-pa-item__body-inner {
-  padding: 0 !important;
-}
-
 .iw-config__header {
   display: flex;
   align-items: center;
@@ -231,6 +227,15 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* UNSTreePicker's dropdown portals to <body> at z-index 500 (--global-z-index-popover).
+   Bump it above the SDK Modal container (300/400) and any host-side modal wrapping so
+   workspace/node lists render on top of the event-config modal instead of behind it. */
+.fds-uns-tree-picker__popover,
+.fds-select-input__popover,
+.fds-color-input__popover {
+  z-index: 10002 !important;
 }
 
 .iw-event-modal .fds-modal__body {

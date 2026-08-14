@@ -85,12 +85,15 @@ export interface ImageEventConfig {
   width: number;                                        // px (0 = auto)
   height: number;                                       // px (0 = auto)
   topic: string;                                        // bindable — user stores {{uns:wsId://path}}
-  operator: '==' | '!=' | '>' | '<' | '>=' | '<=';
-  value: string;                                        // comparison threshold
+  operator: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'within range' | 'outside range';
+  value: string;                                        // comparison value (string or numeric; for range operators this is the low bound)
+  value2?: string;                                      // second value — used only by 'within range' / 'outside range' (high bound)
   frameRangeEnabled: boolean;                           // when true, the event is also gated by [startFrame, endFrame]
   startFrame: number;                                   // Lottie frame (0 = unset)
   endFrame: number;                                     // Lottie frame (0 = unset)
 }
+
+export type ImageObjectFit = 'fill' | 'cover' | 'contain';
 
 export interface ImageWidgetUIConfig {
   defaultImage: string;        // base64 data URL — shown when no rule matches
@@ -98,10 +101,13 @@ export interface ImageWidgetUIConfig {
   linkConfig: {
     enabled: boolean;
     url: string;           // URL to navigate to when image is clicked
+    newTab?: boolean;      // when true, open the URL in a new browser tab
   };
   events: ImageEventConfig[];
   style: {
     card: { wrapInCard: boolean; bg: string };
+    /** CSS object-fit applied to the rendered image. Defaults to 'fill' when unset. */
+    objectFit?: ImageObjectFit;
   };
 }
 
