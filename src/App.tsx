@@ -4,7 +4,6 @@ import { ImageWidgetConfiguration } from './components/ImageWidgetConfiguration/
 import { ImageWidgetEnvelope, ImageWidgetUIConfig, DataEntry, WidgetEvent } from './iosense-sdk/types';
 import { validateSSOToken } from './iosense-sdk/api';
 import { resolve } from './iosense-sdk/mini-engine';
-import '@faclon-labs/design-sdk/styles.css';
 import './App.css';
 
 const EMPTY_UI_CONFIG: ImageWidgetUIConfig = {

@@ -134,9 +134,73 @@ const RANGE_OPERATORS: readonly Operator[] = ['within range', 'outside range'];
 function isRangeOperator(op: Operator): boolean {
   return RANGE_OPERATORS.includes(op);
 }
+
+/** Human-readable label used in the dropdown + selected-value display so
+ *  every option is consistently text (the six math operators were showing
+ *  as bare symbols, the two range operators as words — mismatched). */
+function operatorLabel(op: Operator): string {
+  switch (op) {
+    case '==':             return 'Equals';
+    case '!=':             return 'Not equals';
+    case '>':              return 'Greater than';
+    case '<':              return 'Less than';
+    case '>=':             return 'Greater than or equal';
+    case '<=':             return 'Less than or equal';
+    case 'within range':   return 'Within range';
+    case 'outside range':  return 'Outside range';
+  }
+}
+
+/** Short glyph rendered as the leadingIcon in the operator dropdown so every
+ *  option has a visual anchor (previously the six math ops showed as bare
+ *  symbols and the two range ops as text — visually mismatched). */
+function operatorGlyph(op: Operator): string {
+  switch (op) {
+    case '==':             return '=';
+    case '!=':             return '≠';
+    case '>':              return '>';
+    case '<':              return '<';
+    case '>=':             return '≥';
+    case '<=':             return '≤';
+    case 'within range':   return '⟨⟩';
+    case 'outside range':  return '↔';
+  }
+}
+function OperatorGlyph({ op }: { op: Operator }) {
+  return <span className="iw-op-glyph" aria-hidden="true">{operatorGlyph(op)}</span>;
+}
 function pos(v: string): number {
   return Math.max(0, Number(v) || 0);
 }
+
+/**
+ * Validates the Link Configuration URL. Mirrors the widget-renderer's
+ * `normalizeLinkUrl` semantics: bare domains like "faclon.com" are treated as
+ * external, so the URL parses cleanly once we prefix a protocol when absent.
+ * A path-only value (starts with '/') is accepted as a same-origin SPA route.
+ */
+function isLinkUrlValid(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  const withProtocol =
+    /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/')
+      ? trimmed
+      : trimmed.split('/')[0].includes('.')
+        ? `https://${trimmed}`
+        : trimmed;
+  try {
+    const u = new URL(withProtocol, window.location.origin);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    // Reject "http://" with an empty host.
+    return u.hostname.length > 0 || trimmed.startsWith('/');
+  } catch {
+    return false;
+  }
+}
+
+/** Every SelectInput in this configurator shares one open-state slot, so
+ *  opening a second dropdown implicitly closes the first. */
+type DropdownId = 'objectFit' | 'existingAsset' | 'alignment' | 'operator';
 
 function fileNameFromUrl(url: string): string {
   try {
@@ -260,7 +324,10 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   const [objectFit, setObjectFit] = useState<ImageObjectFit>(
     config?.uiConfig?.style?.objectFit ?? 'fill',
   );
-  const [objectFitOpen, setObjectFitOpen] = useState(false);
+  // Single open-dropdown slot — opening one SelectInput closes any other.
+  const [openDropdown, setOpenDropdown] = useState<DropdownId | null>(null);
+  const toggleDropdown = (id: DropdownId) =>
+    setOpenDropdown((cur) => (cur === id ? null : id));
 
   // Accordion expand state
   const [eventsExpanded, setEventsExpanded] = useState(false);
@@ -292,15 +359,12 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   const [newEventFiles, setNewEventFiles] = useState<UploadFile[]>([]);
   const [assetSource, setAssetSource] = useState<'Upload New' | 'Select Existing'>('Upload New');
   const [existingAssetId, setExistingAssetId] = useState<string>('');
-  const [existingAssetOpen, setExistingAssetOpen] = useState(false);
   const [newEventAlignment, setNewEventAlignment] = useState<Alignment>('Center');
-  const [newEventAlignmentOpen, setNewEventAlignmentOpen] = useState(false);
   const [newEventWidth, setNewEventWidth] = useState<number>(0);
   const [newEventHeight, setNewEventHeight] = useState<number>(0);
   const [lockAspectRatio, setLockAspectRatio] = useState(false);
   const [newEventTopic, setNewEventTopic] = useState('');
   const [newEventOperator, setNewEventOperator] = useState<Operator>('==');
-  const [newEventOperatorOpen, setNewEventOperatorOpen] = useState(false);
   const [newEventValue2, setNewEventValue2] = useState('');
   const [newEventValue, setNewEventValue] = useState('');
   const [newEventFrameRange, setNewEventFrameRange] = useState(false);
@@ -371,6 +435,16 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       objectFit,
     };
   });
+  // Mirror the incoming `config` prop into a ref so `emit()` can source the
+  // envelope's current width/height from whatever the host most recently
+  // handed us (updated when the user drags to resize the cell) instead of
+  // from our own captured-at-upload state. Prevents "changing Image Fit
+  // resets the cell to natural image size" by never overwriting the host's
+  // authoritative dimensions on non-upload config changes.
+  const envelopePropRef = useRef(config);
+  useEffect(() => {
+    envelopePropRef.current = config;
+  });
 
   function emit(overrides?: Partial<{
     defaultImage: string;
@@ -384,11 +458,15 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     objectFit: ImageObjectFit;
   }>) {
     const s = latestStateRef.current;
+    const c = envelopePropRef.current;
     const resolved = {
       defaultImage:     overrides?.defaultImage     ?? s.defaultImage,
       defaultImageSize: overrides?.defaultImageSize ?? s.defaultImageSize,
-      defaultWidth:     overrides?.defaultWidth     ?? s.defaultWidth,
-      defaultHeight:    overrides?.defaultHeight    ?? s.defaultHeight,
+      // Prefer whatever dimensions the host currently has (config prop);
+      // fall back to our local state only if the host hasn't set them yet.
+      // Overrides (image upload) always win.
+      defaultWidth:     overrides?.defaultWidth     ?? c?.width  ?? s.defaultWidth,
+      defaultHeight:    overrides?.defaultHeight    ?? c?.height ?? s.defaultHeight,
       linkEnabled:      overrides?.linkEnabled      ?? s.linkEnabled,
       linkUrl:          overrides?.linkUrl          ?? s.linkUrl,
       linkNewTab:       overrides?.linkNewTab       ?? s.linkNewTab,
@@ -458,16 +536,14 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     setNewEventFiles([]);
     setAssetSource('Upload New');
     setExistingAssetId('');
-    setExistingAssetOpen(false);
+    setOpenDropdown(null);
     setNewEventAlignment('Center');
-    setNewEventAlignmentOpen(false);
     setNewEventWidth(0);
     setNewEventHeight(0);
     setLockAspectRatio(false);
     setAspectRatio(null);
     setNewEventTopic('');
     setNewEventOperator('==');
-    setNewEventOperatorOpen(false);
     setNewEventValue('');
     setNewEventValue2('');
     setNewEventFrameRange(false);
@@ -557,32 +633,10 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   // -------------------------------------------------------------------------
   async function processDefaultImageFile(file: File) {
     if (!authentication) return;
-    const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
-    let capturedW = 0;
-    let capturedH = 0;
-    if (isJson) {
-      try {
-        const text = await file.text();
-        const json = JSON.parse(text);
-        if (typeof json.w === 'number') capturedW = json.w;
-        if (typeof json.h === 'number') capturedH = json.h;
-      } catch { /* leave dimensions blank */ }
-    } else {
-      const b64 = await fileToBase64(file);
-      await new Promise<void>((resolve) => {
-        const img = new window.Image();
-        img.onload = () => {
-          capturedW = img.naturalWidth;
-          capturedH = img.naturalHeight;
-          resolve();
-        };
-        img.onerror = () => resolve();
-        img.src = b64;
-      });
-    }
-    if (capturedW > 0) setDefaultWidth(capturedW);
-    if (capturedH > 0) setDefaultHeight(capturedH);
-
+    // Do NOT capture / emit natural image dimensions. The widget stays at
+    // whatever size the host cell currently is (default or user-resized),
+    // and the selected Image Fit determines how the image displays inside.
+    // This keeps upload consistent with Fit clicks — neither resizes the widget.
     setDefaultImageFiles([uploadFileFromNative(file, 'loading', 0)]);
     setIsUploadingDefault(true);
     try {
@@ -593,8 +647,6 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       emit({
         defaultImage: publicUrl,
         defaultImageSize: file.size,
-        ...(capturedW > 0 ? { defaultWidth: capturedW } : {}),
-        ...(capturedH > 0 ? { defaultHeight: capturedH } : {}),
       });
     } catch (err) {
       console.error('[ImageWidget] default image upload failed:', err);
@@ -662,11 +714,26 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
   })();
   const hasExistingAssets = existingAssets.length > 0;
 
+  // Unique-name check: case-insensitive, ignores whitespace, and excludes the
+  // event currently being edited (so you can Save without renaming it).
+  const trimmedName = newEventName.trim().toLowerCase();
+  const isDuplicateName =
+    trimmedName.length > 0 &&
+    events.some((e) => e.id !== editingEventId && e.label.trim().toLowerCase() === trimmedName);
+
+  // Numeric-only operators (everything except `==`) require the value to be a
+  // valid number. Range operators need both bounds to be numeric.
+  const valueRequiresNumber = newEventOperator !== '==';
+  const isNum = (v: string) => v.trim().length > 0 && Number.isFinite(Number(v));
+  const valueIsValid = valueRequiresNumber ? isNum(newEventValue) : newEventValue.trim().length > 0;
+  const value2IsValid = !isRangeOperator(newEventOperator) || isNum(newEventValue2);
+
   const canSubmit =
     newEventName.trim().length > 0 &&
+    !isDuplicateName &&
     newEventTopic.trim().length > 0 &&
-    newEventValue.trim().length > 0 &&
-    (!isRangeOperator(newEventOperator) || newEventValue2.trim().length > 0) &&
+    valueIsValid &&
+    value2IsValid &&
     newEventImage.length > 0;
 
   // Frame-range overlap detection — non-blocking warning.
@@ -691,13 +758,15 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
     <div className="iw-config" ref={configRef}>
       {/* Header */}
       <div className="iw-config__header">
-        <IconButton
-          className="iw-config__back-btn"
-          icon={<ArrowLeft size={16} />}
-          size="Medium"
-          accessibilityLabel="Back"
-          onClick={() => onBack?.()}
-        />
+        <Tooltip bodyText="Close" placement="Bottom">
+          <IconButton
+            className="iw-config__back-btn"
+            icon={<ArrowLeft size={16} />}
+            size="Medium"
+            accessibilityLabel="Close"
+            onClick={() => onBack?.()}
+          />
+        </Tooltip>
         <span className="iw-config__title LabelLargeSemibold">Image Config</span>
       </div>
 
@@ -750,53 +819,45 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
             isDisabled={!hasImage}
             onChange={({ isChecked }: { isChecked: boolean }) => {
               setLinkEnabled(isChecked);
-              emit({ linkEnabled: isChecked });
+              if (!isChecked) {
+                // Reset link fields when the toggle is turned off so a stale URL /
+                // new-tab preference doesn't linger in the envelope (and doesn't
+                // reappear as pre-filled if the user re-enables the toggle later).
+                setLinkUrl('');
+                setLinkNewTab(false);
+                emit({ linkEnabled: false, linkUrl: '', linkNewTab: false });
+              } else {
+                emit({ linkEnabled: true });
+              }
             }}
           />
         </div>
 
-        {hasImage && (
-          <div className="iw-config__form-group">
-            <InputFieldHeader label="Image Fit" />
-            <SelectInput
-              label=""
-              value={objectFit.charAt(0).toUpperCase() + objectFit.slice(1)}
-              helpText="Fill stretches to fill (may distort). Cover fills without distortion (may crop). Contain fits inside (may show empty space)."
-              onClick={() => setObjectFitOpen((v) => !v)}
-              isOpen={objectFitOpen}
-            >
-              <DropdownMenu>
-                {(['fill', 'cover', 'contain'] as const).map((opt) => (
-                  <ActionListItem
-                    key={opt}
-                    contentType="Item"
-                    selectionType="Single"
-                    title={opt.charAt(0).toUpperCase() + opt.slice(1)}
-                    isSelected={objectFit === opt}
-                    onClick={() => {
-                      setObjectFit(opt);
-                      setObjectFitOpen(false);
-                      emit({ objectFit: opt });
-                    }}
-                  />
-                ))}
-              </DropdownMenu>
-            </SelectInput>
-          </div>
-        )}
-
-        {hasImage && linkEnabled && (
-          <TextInput
-            label="URL"
-            type="url"
-            placeholder="https://example.com"
-            value={linkUrl}
-            onChange={({ value }: { value: string }) => {
-              setLinkUrl(value);
-              emit({ linkUrl: value });
-            }}
-          />
-        )}
+        {hasImage && linkEnabled && (() => {
+          const trimmed = linkUrl.trim();
+          const urlIsEmpty = trimmed.length === 0;
+          const urlIsInvalid = !urlIsEmpty && !isLinkUrlValid(trimmed);
+          const errorText = urlIsEmpty
+            ? 'URL is required'
+            : urlIsInvalid
+              ? 'Enter a valid URL (e.g. https://example.com)'
+              : undefined;
+          return (
+            <TextInput
+              label="URL"
+              type="url"
+              necessityIndicator="required"
+              placeholder="https://example.com"
+              value={linkUrl}
+              validationState={errorText ? 'error' : 'none'}
+              errorText={errorText}
+              onChange={({ value }: { value: string }) => {
+                setLinkUrl(value);
+                emit({ linkUrl: value });
+              }}
+            />
+          );
+        })()}
 
         {hasImage && linkEnabled && (
           <div className="iw-config__switch-row">
@@ -809,6 +870,36 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                 emit({ linkNewTab: isChecked });
               }}
             />
+          </div>
+        )}
+
+        {hasImage && (
+          <div className="iw-config__form-group">
+            <InputFieldHeader label="Image Fit" />
+            <SelectInput
+              label=""
+              value={objectFit.charAt(0).toUpperCase() + objectFit.slice(1)}
+              helpText="Fill stretches to fill (may distort). Cover fills without distortion (may crop). Contain fits inside (may show empty space)."
+              onClick={() => toggleDropdown('objectFit')}
+              isOpen={openDropdown === 'objectFit'}
+            >
+              <DropdownMenu>
+                {(['fill', 'cover', 'contain'] as const).map((opt) => (
+                  <ActionListItem
+                    key={opt}
+                    contentType="Item"
+                    selectionType="Single"
+                    title={opt.charAt(0).toUpperCase() + opt.slice(1)}
+                    isSelected={objectFit === opt}
+                    onClick={() => {
+                      setObjectFit(opt);
+                      setOpenDropdown(null);
+                      emit({ objectFit: opt });
+                    }}
+                  />
+                ))}
+              </DropdownMenu>
+            </SelectInput>
           </div>
         )}
       </div>
@@ -824,17 +915,19 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
           isExpanded={hasEvents && eventsExpanded}
           onToggle={() => setEventsExpanded((v) => !v)}
           headerAction={
-            <IconButton
-              className="iw-config__add-btn"
-              icon={<Plus size={16} aria-hidden="true" />}
-              size="Medium"
-              accessibilityLabel="Add event"
-              isDisabled={!hasImage}
-              onClick={(e: React.MouseEvent) => {
-                if (!hasImage) return;
-                openAddEventModal(e);
-              }}
-            />
+            <Tooltip bodyText="Add event" placement="Bottom">
+              <IconButton
+                className="iw-config__add-btn"
+                icon={<Plus size={16} aria-hidden="true" />}
+                size="Medium"
+                accessibilityLabel="Add event"
+                isDisabled={!hasImage}
+                onClick={(e: React.MouseEvent) => {
+                  if (!hasImage) return;
+                  openAddEventModal(e);
+                }}
+              />
+            </Tooltip>
           }
         >
           {events.length === 0 ? (
@@ -843,11 +936,12 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
             <div className="iw-config__event-list">
               {events.map((evt, index) => {
                 const isEvtRange = evt.operator === 'within range' || evt.operator === 'outside range';
+                const opLabel = operatorLabel(evt.operator as Operator);
                 const subtitle = evt.frameRangeEnabled
                   ? `Frame Range : ${evt.startFrame || 0}-${evt.endFrame || 0}`
                   : isEvtRange
-                    ? `${evt.operator} ${evt.value} – ${evt.value2 ?? ''}`.trim()
-                    : `${evt.operator} ${evt.value}`.trim();
+                    ? `${opLabel} ${evt.value} – ${evt.value2 ?? ''}`.trim()
+                    : `${opLabel} ${evt.value}`.trim();
                 const isDragging = dragIndex === index;
                 const isDragOver = dragOverIndex === index && dragIndex !== index;
                 const rowClass = [
@@ -883,29 +977,32 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                       setDragOverIndex(null);
                     }}
                   >
-                    <span
-                      className="iw-config__event-grip"
-                      aria-hidden="true"
-                      title="Drag to reorder priority"
-                    >
-                      <MoreVertical size={14} />
-                      <MoreVertical size={14} />
-                    </span>
+                    <Tooltip bodyText="Drag to reorder priority" placement="Right">
+                      <span
+                        className="iw-config__event-grip"
+                        aria-hidden="true"
+                      >
+                        <MoreVertical size={14} />
+                        <MoreVertical size={14} />
+                      </span>
+                    </Tooltip>
                     <ListCard
                       title={evt.label}
                       subtitle={subtitle}
                       onClick={(e: React.MouseEvent) => openEditEventModal(evt, e)}
                       trailingItems={
                         <ListCardTrailingItem trailing="Slot">
-                          <IconButton
-                            icon={<X size={16} aria-hidden="true" />}
-                            size="Medium"
-                            accessibilityLabel={`Delete event ${evt.label}`}
-                            onClick={(e: React.MouseEvent) => {
-                              e.stopPropagation();
-                              deleteEvent(evt.id);
-                            }}
-                          />
+                          <Tooltip bodyText="Delete event" placement="Bottom">
+                            <IconButton
+                              icon={<X size={16} aria-hidden="true" />}
+                              size="Medium"
+                              accessibilityLabel={`Delete event ${evt.label}`}
+                              onClick={(e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                deleteEvent(evt.id);
+                              }}
+                            />
+                          </Tooltip>
                         </ListCardTrailingItem>
                       }
                     />
@@ -945,13 +1042,15 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
       >
         <ModalBody>
           <div className="iw-event-modal__body">
-            {/* 1. Event name */}
+            {/* 1. Event name — must be unique across events (case/whitespace insensitive) */}
             <TextInput
               label="Event name"
               necessityIndicator="required"
               size="Medium"
-              placeholder="Enter event name"
+              placeholder="e.g. Machine Running"
               value={newEventName}
+              validationState={isDuplicateName ? 'error' : 'none'}
+              errorText={isDuplicateName ? 'An event with this name already exists' : undefined}
               onChange={({ value }: { value: string }) => setNewEventName(value)}
             />
 
@@ -992,10 +1091,10 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
             {hasExistingAssets && assetSource === 'Select Existing' && (
               <SelectInput
                 label=""
-                placeholder="Select existing asset"
+                placeholder="e.g. Running Animation"
                 value={existingAssets.find((e) => e.id === existingAssetId)?.label ?? ''}
-                onClick={() => setExistingAssetOpen((v) => !v)}
-                isOpen={existingAssetOpen}
+                onClick={() => toggleDropdown('existingAsset')}
+                isOpen={openDropdown === 'existingAsset'}
               >
                 <DropdownMenu>
                   {existingAssets.map((a) => (
@@ -1012,7 +1111,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                         setNewEventWidth(a.width);
                         setNewEventHeight(a.height);
                         setAspectRatio(a.width > 0 && a.height > 0 ? a.width / a.height : null);
-                        setExistingAssetOpen(false);
+                        setOpenDropdown(null);
                       }}
                     />
                   ))}
@@ -1062,8 +1161,8 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                 label=""
                 value={newEventAlignment}
                 leadingIcon={alignmentIcon(newEventAlignment)}
-                onClick={() => setNewEventAlignmentOpen((v) => !v)}
-                isOpen={newEventAlignmentOpen}
+                onClick={() => toggleDropdown('alignment')}
+                isOpen={openDropdown === 'alignment'}
               >
                 <DropdownMenu>
                   {ALIGNMENTS.map((opt) => (
@@ -1074,7 +1173,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                       title={opt}
                       leadingIcon={alignmentIcon(opt)}
                       isSelected={newEventAlignment === opt}
-                      onClick={() => { setNewEventAlignment(opt); setNewEventAlignmentOpen(false); }}
+                      onClick={() => { setNewEventAlignment(opt); setOpenDropdown(null); }}
                     />
                   ))}
                 </DropdownMenu>
@@ -1086,7 +1185,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               <InputFieldHeader label="UNS Path" size="Medium" necessityIndicator="required" />
               <UNSTreePicker
                 label=""
-                placeholder="Enter UNS Path"
+                placeholder="e.g. Plant1/Line2/Motor/status"
                 value={newEventTopic}
                 workspaces={unsWorkspaces}
                 isLoadingWorkspaces={isLoadingWorkspaces}
@@ -1104,19 +1203,21 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               <InputFieldHeader label="Operator" size="Medium" necessityIndicator="required" />
               <SelectInput
                 label=""
-                value={newEventOperator}
-                onClick={() => setNewEventOperatorOpen((v) => !v)}
-                isOpen={newEventOperatorOpen}
+                value={operatorLabel(newEventOperator)}
+                leadingIcon={<OperatorGlyph op={newEventOperator} />}
+                onClick={() => toggleDropdown('operator')}
+                isOpen={openDropdown === 'operator'}
               >
                 <DropdownMenu>
                   {OPERATOR_OPTIONS.map((op) => (
                     <ActionListItem
                       key={op}
-                      title={op}
+                      title={operatorLabel(op)}
+                      leadingIcon={<OperatorGlyph op={op} />}
                       isSelected={newEventOperator === op}
                       onClick={() => {
                         setNewEventOperator(op);
-                        setNewEventOperatorOpen(false);
+                        setOpenDropdown(null);
                         // Clear the high bound when switching away from a range operator
                         if (!isRangeOperator(op)) setNewEventValue2('');
                       }}
@@ -1126,16 +1227,16 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
               </SelectInput>
             </div>
 
-            {/* 8. Value(s) — text so users can enter strings like "N/A" or numeric thresholds.
-                Range operators show two inputs (low bound + high bound). */}
+            {/* 8. Value(s) — string values (e.g. "N/A") are only allowed with `==`.
+                Every other operator (!=, ordering, range) accepts numbers only. */}
             {isRangeOperator(newEventOperator) ? (
               <div className="iw-event-modal__frame-row">
                 <TextInput
                   label="Min Value"
                   necessityIndicator="required"
                   size="Medium"
-                  type="text"
-                  placeholder="Low bound"
+                  type="number"
+                  placeholder="e.g. 10"
                   value={newEventValue}
                   onChange={({ value }: { value: string }) => setNewEventValue(value)}
                 />
@@ -1143,22 +1244,32 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                   label="Max Value"
                   necessityIndicator="required"
                   size="Medium"
-                  type="text"
-                  placeholder="High bound"
+                  type="number"
+                  placeholder="e.g. 100"
                   value={newEventValue2}
                   onChange={({ value }: { value: string }) => setNewEventValue2(value)}
                 />
               </div>
             ) : (
-            <TextInput
-              label="Value"
-              necessityIndicator="required"
-              size="Medium"
-              type="text"
-              placeholder="e.g. 50 or N/A"
-              value={newEventValue}
-              onChange={({ value }: { value: string }) => setNewEventValue(value)}
-            />
+              (() => {
+                const allowStrings = newEventOperator === '==';
+                const trimmed = newEventValue.trim();
+                // Numeric-only operators show an error if the current value is not a valid number.
+                const isNonNumeric = !allowStrings && trimmed.length > 0 && !Number.isFinite(Number(trimmed));
+                return (
+                  <TextInput
+                    label="Value"
+                    necessityIndicator="required"
+                    size="Medium"
+                    type={allowStrings ? 'text' : 'number'}
+                    placeholder={allowStrings ? 'e.g. 50 or N/A' : 'e.g. 50'}
+                    value={newEventValue}
+                    validationState={isNonNumeric ? 'error' : 'none'}
+                    errorText={isNonNumeric ? 'This operator only accepts numeric values' : undefined}
+                    onChange={({ value }: { value: string }) => setNewEventValue(value)}
+                  />
+                );
+              })()
             )}
 
             {/* 9–11. Frame Range — only for Lottie (.json) assets */}
@@ -1180,7 +1291,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                       size="Medium"
                       type="number"
                       min={0}
-                      placeholder="From"
+                      placeholder="e.g. 0"
                       value={newEventStartFrame > 0 ? String(newEventStartFrame) : ''}
                       onChange={({ value }: { value: string }) => setNewEventStartFrame(pos(value))}
                     />
@@ -1189,7 +1300,7 @@ export function ImageWidgetConfiguration(props: ImageWidgetConfigurationProps) {
                       size="Medium"
                       type="number"
                       min={0}
-                      placeholder="To"
+                      placeholder="e.g. 120"
                       value={newEventEndFrame > 0 ? String(newEventEndFrame) : ''}
                       onChange={({ value }: { value: string }) => setNewEventEndFrame(pos(value))}
                     />
@@ -1366,16 +1477,18 @@ function LottiePlayer({ animationData }: { animationData: object }) {
         onLoopComplete={handleLoopComplete}
       />
       <div className="iw-preview-modal__controls">
-        <IconButton
-          icon={
-            isPlaying
-              ? <Pause size={16} aria-hidden="true" />
-              : <Play size={16} aria-hidden="true" />
-          }
-          size="Medium"
-          accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-          onClick={togglePlay}
-        />
+        <Tooltip bodyText={isPlaying ? 'Pause' : 'Play'} placement="Top">
+          <IconButton
+            icon={
+              isPlaying
+                ? <Pause size={16} aria-hidden="true" />
+                : <Play size={16} aria-hidden="true" />
+            }
+            size="Medium"
+            accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+            onClick={togglePlay}
+          />
+        </Tooltip>
         <input
           type="range"
           className="iw-preview-modal__scrubber"

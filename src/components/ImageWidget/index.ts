@@ -1,7 +1,6 @@
 import { createRoot, Root } from 'react-dom/client';
 import React from 'react';
 import { ImageWidget } from './ImageWidget';
-import '@faclon-labs/design-sdk/styles.css';
 
 const roots = new Map<string, Root>();
 

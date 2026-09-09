@@ -229,14 +229,6 @@
   overflow: hidden;
 }
 
-/* UNSTreePicker's dropdown portals to <body> at z-index 500 (--global-z-index-popover).
-   Bump it above the SDK Modal container (300/400) and any host-side modal wrapping so
-   workspace/node lists render on top of the event-config modal instead of behind it. */
-.fds-uns-tree-picker__popover,
-.fds-select-input__popover,
-.fds-color-input__popover {
-  z-index: 10002 !important;
-}
 
 .iw-event-modal .fds-modal__body {
   flex: 1 1 auto;
@@ -287,6 +279,22 @@
   color: var(--text-default-primary, #050505);
   font-size: 14px;
   line-height: 20px;
+  font-weight: 600;
+}
+
+/* Operator dropdown leading icon: a small text glyph styled as a badge. Same
+   footprint whether the glyph is one char ("=") or two ("⟨⟩"), so all rows
+   line up visually. */
+.iw-op-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-default-secondary, #292f32);
   font-weight: 600;
 }
 
